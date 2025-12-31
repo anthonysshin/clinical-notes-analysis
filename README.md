@@ -297,7 +297,6 @@ python -c "import torch; print(torch.cuda.get_device_name(0))"
 @article{mental_health_coding_2025,
   title={Automated ICD-10 Mental Health Diagnosis Coding from Clinical Notes using Domain-Adapted Large Language Models},
   author={[Authors]},
-  journal={npj Digital Medicine},
   year={2025}
 }
 ```
