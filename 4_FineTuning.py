@@ -80,8 +80,8 @@ CONFIG = {
     'max_samples': MAX_TRAIN_SAMPLES,      # 20,000
     'num_train_epochs': NUM_EPOCHS,        # 5 epochs
     'max_steps': -1,
-    'per_device_train_batch_size': TRAIN_BATCH_SIZE,  # 2
-    'gradient_accumulation_steps': GRADIENT_ACCUMULATION_STEPS,  # 4
+    'per_device_train_batch_size': TRAIN_BATCH_SIZE,  # 1 (32GB VRAM)
+    'gradient_accumulation_steps': GRADIENT_ACCUMULATION_STEPS,  # 4 (effective batch = 4)
     'learning_rate': LEARNING_RATE,        # 2e-4
     'warmup_steps': WARMUP_STEPS,          # 100
     'logging_steps': 100,
