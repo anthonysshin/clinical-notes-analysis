@@ -12,17 +12,18 @@ This project implements a chunking-based approach to handle long clinical docume
 - **Union Aggregation**: Combines F-code predictions from all chunks
 - **LoRA Fine-tuning**: Efficient 4-bit quantized training with 0.04% trainable parameters
 - **8 Evaluation Strategies**: Systematic comparison of prompting approaches
-- **Personal Workstation Support**: Optimized for consumer GPUs (RTX 4090/5090)
+- **Personal Workstation Support**: Optimized for consumer GPU (tested on RTX 5090)
 
 ## Requirements
 
 ### Hardware
 
-| Component | Minimum | Recommended |
-|-----------|---------|-------------|
-| GPU VRAM | 24GB (RTX 4090) | 32GB (RTX 5090) |
-| System RAM | 24GB | 32GB |
-| Storage | 50GB | 100GB |
+**Tested Configuration:**
+- GPU: NVIDIA RTX 5090 (32GB VRAM)
+- System RAM: 32GB
+- Storage: 100GB
+
+> **Note:** This project was developed and tested on RTX 5090. Compatibility with other GPUs (e.g., RTX 4090 24GB) has not been verified.
 
 ### Software
 
@@ -159,7 +160,7 @@ python 5_FindBestCheckpoint.py
 - `models/checkpoints/checkpoint-*/`
 - `best_checkpoint.json`
 
-**Estimated time:** 8-12 hours for 5 epochs with 20K samples
+> **Note:** Training time varies significantly based on hardware. On HPC clusters (H100/A100), expect 8-12 hours. On personal workstations, training may take considerably longer.
 
 ### Phase 3: Evaluation
 
@@ -176,7 +177,7 @@ python 6g1_Eval_BaseModel_ZeroShot.py
 python 6g2_Eval_BaseModel_CoT.py
 ```
 
-**Estimated time:** 30-60 minutes per strategy (1000 test samples)
+> **Note:** Evaluation time varies based on hardware and the number of test samples (default: 1000).
 
 ### Phase 4: Analysis
 
