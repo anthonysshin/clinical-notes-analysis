@@ -276,9 +276,9 @@ NUM_EPOCHS = 5
 # This allows flexible experimentation with different sample sizes
 MAX_TRAIN_SAMPLES = 20000
 
-# Training batch configuration
-TRAIN_BATCH_SIZE = 2
-GRADIENT_ACCUMULATION_STEPS = 4  # Effective batch size = 2 * 4 = 8
+# Training batch configuration (optimized for 32GB VRAM workstation)
+TRAIN_BATCH_SIZE = 1
+GRADIENT_ACCUMULATION_STEPS = 4  # Effective batch size = 1 * 4 = 4
 
 # Learning rate
 LEARNING_RATE = 2e-4
