@@ -9,9 +9,8 @@ This project implements a chunking-based approach to handle long clinical docume
 ### Key Features
 
 - **Chunking Strategy**: 2800-token chunks with 200-token overlap (handles 66.8% of documents requiring multiple chunks)
-- **Union Aggregation**: Combines F-code predictions from all chunks
 - **LoRA Fine-tuning**: Efficient 4-bit quantized training with 0.04% trainable parameters
-- **8 Evaluation Strategies**: Systematic comparison of prompting approaches
+- **6 Evaluation Strategies**: Systematic comparison of prompting approaches (plus 2 base model baselines)
 - **Personal Workstation Support**: Optimized for consumer GPU (tested on RTX 5090)
 
 ## Requirements
@@ -160,11 +159,11 @@ python 5_FindBestCheckpoint.py
 - `models/checkpoints/checkpoint-*/`
 - `best_checkpoint.json`
 
-> **Note:** Training time varies significantly based on hardware. On HPC clusters (H100/A100), expect 8-12 hours. On personal workstations, training may take considerably longer.
+> **Note:** Training time varies significantly based on hardware configuration.
 
 ### Phase 3: Evaluation
 
-Run all 8 evaluation strategies:
+Run all evaluation strategies (6 fine-tuned + 2 base model baselines):
 
 ```bash
 python 6a_Eval_ZeroShotBaseline.py
@@ -200,32 +199,6 @@ python 10_AdditionalFigures.py
 | **6f** Keyword + CoT | Keywords | CoT | Combined approach (best performance) |
 | **6g1** Base Zero-Shot | Chunking | Zero-shot | Unfine-tuned baseline |
 | **6g2** Base CoT | Chunking | CoT | Unfine-tuned + CoT |
-
-### Prompt Styles
-
-**Zero-Shot** (6a, 6e, 6g1):
-
-```
-Extract all psychiatric F-codes (F00-F99) from the clinical text.
-
-Respond with only the F-codes as a JSON array.
-
-Format response as:
-["F32.9", "F17.210"]
-```
-
-**Chain-of-Thought** (6d, 6f, 6g2, Training):
-
-```
-Analyze the clinical text step by step to extract psychiatric F-codes (F00-F99).
-
-STEP-BY-STEP PROCESS:
-Step 1: IDENTIFY psychiatric keywords and conditions
-Step 2: MAP identified conditions to appropriate F-codes
-Step 3: SELECT most confident codes (maximum 5)
-Step 4: OUTPUT as JSON array only
-["F32.9", "F17.210", "F41.9"]
-```
 
 ## Configuration
 
@@ -318,37 +291,13 @@ nvidia-smi  # View GPU memory usage
 python -c "import torch; print(torch.cuda.get_device_name(0))"
 ```
 
-## Known Limitations
-
-### Label Imbalance: F17.200 vs F17.210
-
-The model exhibits zero performance (Precision=0, Recall=0, F1=0) for **F17.200** (Nicotine dependence, unspecified) due to severe class imbalance with the semantically similar **F17.210** (Nicotine dependence, cigarettes).
-
-**Data Distribution:**
-
-| Code | Definition | Training | Test | Ratio |
-|------|------------|----------|------|-------|
-| F17.210 | Nicotine dependence, cigarettes, uncomplicated | 13,848 | 1,721 | 10x |
-| F17.200 | Nicotine dependence, unspecified, uncomplicated | 1,382 | 172 | 1x |
-
-**Model Behavior (17 test cases with F17.200 ground truth):**
-- 12 cases (71%): Model predicted F17.210 instead
-- 5 cases (29%): Model predicted other codes only
-- 0 cases (0%): Model correctly predicted F17.200
-
-**Root Cause:**
-1. F17.210 is 10x more frequent than F17.200 in both training and test data
-2. Both codes are semantically nearly identical (cigarette vs. unspecified nicotine dependence)
-3. The model learned to always predict the dominant class
-
-This is expected behavior for discriminative models on imbalanced multi-label data and represents a known limitation of the approach.
-
 ## Citation
 
 ```bibtex
-@article{psychiatric_fcode_2025,
-  title={Psychiatric F-Code Classification from Clinical Notes using Fine-tuned LLMs with Chunking},
+@article{mental_health_coding_2025,
+  title={Automated ICD-10 Mental Health Diagnosis Coding from Clinical Notes using Domain-Adapted Large Language Models},
   author={[Authors]},
+  journal={npj Digital Medicine},
   year={2025}
 }
 ```
