@@ -567,8 +567,6 @@ def main():
     print("Aggregation: Union | CoT: NO | Mappings: NO")
     print("=" * 80)
 
-    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512'
-
     evaluator = BaseModelZeroShotEvaluator(config)
 
     try:

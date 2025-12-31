@@ -599,8 +599,6 @@ def main():
     print("Preprocessing: PSYCH_KEYWORDS extraction | CoT: YES | Key Distinctions: YES")
     print("=" * 80)
 
-    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512'
-
     evaluator = KeywordAugmentedCoTEvaluator(CONFIG)
 
     try:

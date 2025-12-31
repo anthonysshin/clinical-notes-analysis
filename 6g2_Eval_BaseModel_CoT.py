@@ -608,8 +608,6 @@ def main():
     print("Aggregation: Union | CoT: YES | Mappings: YES")
     print("=" * 80)
 
-    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512'
-
     evaluator = BaseModelCoTEvaluator(config)
 
     try:

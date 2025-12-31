@@ -574,8 +574,6 @@ def main():
     print("Preprocessing: Chunking on-the-fly | CoT: NO | Mappings: NO")
     print("=" * 80)
 
-    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512'
-
     evaluator = RuleConstrainedEvaluator(CONFIG)
 
     try:
