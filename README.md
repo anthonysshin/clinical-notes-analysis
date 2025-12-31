@@ -291,6 +291,10 @@ nvidia-smi  # View GPU memory usage
 python -c "import torch; print(torch.cuda.get_device_name(0))"
 ```
 
+## External Validation
+
+External validation was performed on proprietary clinical data from the University of Illinois Chicago (UIC). Validation scripts are available upon reasonable request to the corresponding author.
+
 ## Citation
 
 ```bibtex
