@@ -1,0 +1,56 @@
+# =============================================================================
+# requirements.txt - Clinical Note Analysis Project
+# =============================================================================
+#
+# Installation:
+#   pip install -r requirements.txt
+#
+# For GPU support with PyTorch, install PyTorch separately first:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu121
+#
+# =============================================================================
+
+# Core Data Science
+numpy>=1.24.0
+pandas>=2.0.0
+scipy>=1.10.0
+
+# Machine Learning / Deep Learning
+torch>=2.0.0
+transformers>=4.35.0
+accelerate>=0.24.0
+bitsandbytes>=0.41.0
+peft>=0.6.0
+trl>=0.7.0
+datasets>=2.14.0
+sentencepiece>=0.1.99
+
+# Unsloth (for efficient fine-tuning)
+# Install separately: pip install unsloth
+# unsloth>=2024.1
+
+# Visualization
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Statistical Analysis
+statannotations>=0.6.0
+
+# Progress Bars
+tqdm>=4.65.0
+
+# Jupyter (optional, for interactive development)
+# jupyter>=1.0.0
+# ipykernel>=6.25.0
+
+# Utilities
+python-dateutil>=2.8.0
+pytz>=2023.3
+
+# =============================================================================
+# Version Notes:
+# - PyTorch 2.0+ required for improved performance and memory efficiency
+# - transformers 4.35+ required for latest model support
+# - bitsandbytes 0.41+ required for 4-bit quantization
+# - unsloth should be installed separately for optimal performance
+# =============================================================================

@@ -1,0 +1,158 @@
+# =============================================================================
+# .gitignore - Clinical Note Analysis Project
+# =============================================================================
+
+# =============================================================================
+# Python
+# =============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# =============================================================================
+# IDE and Editors
+# =============================================================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# =============================================================================
+# Jupyter Notebooks
+# =============================================================================
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# =============================================================================
+# Data Files (DO NOT COMMIT - Contains PHI)
+# =============================================================================
+data/
+*.csv
+*.parquet
+*.json
+!config.json
+
+# Raw MIMIC-IV data
+raw_data/
+MIMIC-IV_raw_data/
+mimic-iv/
+
+# =============================================================================
+# Model Checkpoints and Outputs
+# =============================================================================
+checkpoints/
+models/
+outputs/
+logs/
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.gguf
+
+# Best checkpoint config (generated)
+best_checkpoint.json
+
+# =============================================================================
+# SLURM and HPC
+# =============================================================================
+slurm-*.out
+*.out
+*.err
+job_*.sh
+
+# =============================================================================
+# Hugging Face Cache
+# =============================================================================
+.cache/
+~/.cache/huggingface/
+
+# =============================================================================
+# OS Generated Files
+# =============================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# =============================================================================
+# Logs and Temporary Files
+# =============================================================================
+*.log
+*.tmp
+*.temp
+*.bak
+
+# =============================================================================
+# Secrets and Credentials (NEVER COMMIT)
+# =============================================================================
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+credentials.json
+secrets.json
+config.local.py
+
+# =============================================================================
+# Deprecated Files (old scripts, outputs, logs)
+# =============================================================================
+deprecated_files/
+deprecated/
+
+# =============================================================================
+# Project-Specific Exclusions
+# =============================================================================
+# PLM-ICD replication (separate baseline)
+plm_icd/
+PLM_ICD_REPLICATION.md
+
+# SLURM job scripts (HPC-specific)
+slurm_scripts/
+
+# Claude Code settings
+.claude/
+CLAUDE.md
+
+# Manuscript drafts
+manuscript_*.txt
+
+# Unsloth cache
+unsloth_compiled_cache/
+
+# Raw data symlink
+raw_data
