@@ -63,7 +63,7 @@ CNA_Chunking_1222_2025/
 ├── 6g2_Eval_BaseModel_CoT.py       # Base model CoT
 ├── 8_MultiEvalAnalysis.py          # Comparative analysis
 ├── 9_ErrorAnalysis.py              # Error pattern analysis
-├── 10_PublicationFigures.py        # Publication-ready figures
+├── 10_AdditionalFigures.py         # Additional analysis figures
 ├── data/                           # Processed datasets
 ├── models/                         # Fine-tuned checkpoints
 ├── outputs/                        # Evaluation results
