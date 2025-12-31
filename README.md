@@ -8,46 +8,91 @@ This project implements a chunking-based approach to handle long clinical docume
 
 ### Key Features
 
-- **Chunking Strategy**: 2800-token chunks with 200-token overlap (handles 66.8% of documents that exceed single-chunk capacity)
+- **Chunking Strategy**: 2800-token chunks with 200-token overlap (handles 66.8% of documents requiring multiple chunks)
 - **Union Aggregation**: Combines F-code predictions from all chunks
 - **LoRA Fine-tuning**: Efficient 4-bit quantized training with 0.04% trainable parameters
 - **8 Evaluation Strategies**: Systematic comparison of prompting approaches
+- **Personal Workstation Support**: Optimized for consumer GPUs (RTX 4090/5090)
 
 ## Requirements
 
 ### Hardware
-- GPU: NVIDIA H100/A100 (80GB+ VRAM recommended) or RTX 4090 (24GB)
-- RAM: 96GB system memory
-- Storage: ~100GB for model checkpoints and data
+
+| Component | Minimum | Recommended |
+|-----------|---------|-------------|
+| GPU VRAM | 24GB (RTX 4090) | 32GB (RTX 5090) |
+| System RAM | 24GB | 32GB |
+| Storage | 50GB | 100GB |
 
 ### Software
+
 - Python 3.10+
-- PyTorch 2.0+ with CUDA
+- PyTorch 2.0+ with CUDA 12.1+
 - Unsloth (efficient fine-tuning)
-- Transformers 4.40+
+- Transformers 4.35+
 
 ### Data
-- MIMIC-IV v3.1 (PhysioNet credentialed access required)
+
+- MIMIC-IV v3.1 ([PhysioNet credentialed access required](https://physionet.org/content/mimiciv/))
 - MIMIC-IV-Note v2.2 (discharge summaries)
 
 ## Installation
 
-```bash
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate
+### Step 1: Clone Repository
 
-# Install dependencies
-pip install torch transformers datasets pandas numpy scikit-learn
-pip install unsloth
-pip install matplotlib seaborn scipy
+```bash
+git clone https://github.com/anthonysshin/clinical-notes-analysis.git
+cd clinical-notes-analysis
+```
+
+### Step 2: WSL2 Configuration (Windows Users)
+
+> **Critical for preventing out-of-memory errors during model loading.**
+
+Create or edit `C:\Users\<username>\.wslconfig`:
+
+```ini
+[wsl2]
+memory=28GB
+swap=8GB
+```
+
+Restart WSL2:
+
+```powershell
+wsl --shutdown
+```
+
+### Step 3: Create Virtual Environment
+
+```bash
+# Create and activate virtual environment
+python -m venv venv
+source venv/bin/activate  # Linux/macOS/WSL
+
+# Install PyTorch with CUDA support
+pip install torch --index-url https://download.pytorch.org/whl/cu121
+
+# Install project dependencies
+pip install -r requirements.txt
+
+# Install Unsloth for efficient fine-tuning
+pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
+```
+
+### Step 4: Verify Installation
+
+```bash
+python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.cuda.is_available()}')"
+python -c "from unsloth import FastLanguageModel; print('Unsloth: OK')"
 ```
 
 ## Project Structure
 
 ```
-CNA_Chunking_1222_2025/
+clinical-notes-analysis/
 ├── config.py                       # Centralized configuration
+├── requirements.txt                # Python dependencies
 ├── 1_DataPrep.py                   # MIMIC-IV data preparation
 ├── 2_PrepareInstructionData.py     # Instruction format + chunking
 ├── 3_EDA.py                        # Exploratory data analysis
@@ -61,65 +106,66 @@ CNA_Chunking_1222_2025/
 ├── 6f_Eval_KeywordAugmentedCoT.py  # Keyword preprocessing + CoT
 ├── 6g1_Eval_BaseModel_ZeroShot.py  # Base model zero-shot
 ├── 6g2_Eval_BaseModel_CoT.py       # Base model CoT
+├── 7_SingleEvalAnalysis.py         # Single strategy analysis
 ├── 8_MultiEvalAnalysis.py          # Comparative analysis
 ├── 9_ErrorAnalysis.py              # Error pattern analysis
 ├── 10_AdditionalFigures.py         # Additional analysis figures
-├── data/                           # Processed datasets
-├── models/                         # Fine-tuned checkpoints
-├── outputs/                        # Evaluation results
-└── slurm_scripts/                  # HPC job scripts
+├── data/                           # Processed datasets (created by scripts)
+├── models/                         # Fine-tuned checkpoints (created by scripts)
+└── outputs/                        # Evaluation results (created by scripts)
 ```
 
 ## Pipeline
 
-### Step 1: Data Preparation
+### Directory Setup
+
+Create required directories before running:
+
 ```bash
+mkdir -p data models/checkpoints outputs logs raw_data
+```
+
+Place MIMIC-IV data files in `raw_data/` directory.
+
+### Phase 1: Data Preparation
+
+```bash
+# Step 1: Prepare MIMIC-IV data (filter F-codes, create splits)
 python 1_DataPrep.py
-```
-- Loads MIMIC-IV discharge notes and ICD diagnoses
-- Filters to psychiatric F-codes (F00-F99)
-- Creates stratified train/validation/test splits (70/15/15)
 
-### Step 2: Prepare Instruction Data
-```bash
+# Step 2: Create chunked instruction data for training
 python 2_PrepareInstructionData.py
-```
-- Chunks clinical notes (2800 tokens, 200 overlap)
-- Creates instruction-tuning format with CoT system prompt
-- Each chunk inherits parent document's F-code labels
 
-### Step 3: Exploratory Data Analysis
-```bash
+# Step 3: Exploratory data analysis (generates 11 figures)
 python 3_EDA.py
 ```
-- Generates 11 analysis figures
-- F-code distribution, co-occurrence patterns
-- Text length and chunking statistics
 
-### Step 4: Fine-Tuning
+**Outputs:**
+- `data/mimic_iv_{train,val,test}_data.csv`
+- `data/{train,val,test}_chunked.json`
+- `outputs/3_EDA/*.png`
+
+### Phase 2: Fine-Tuning
+
 ```bash
+# Step 4: Fine-tune GPT-OSS 20B with LoRA adapters
 python 4_FineTuning.py
-# Or via SLURM:
-sbatch slurm_scripts/4_finetune.slurm
-```
-- Fine-tunes GPT-OSS 20B with LoRA adapters
-- 4-bit quantization, 5 epochs, 20K training samples
-- Saves checkpoints every 500 steps
 
-### Step 5: Checkpoint Selection
-```bash
+# Step 5: Find best checkpoint using validation set
 python 5_FindBestCheckpoint.py
 ```
-- Evaluates all checkpoints on 200 validation samples
-- Selects best by Micro F1 score
-- Saves to `best_checkpoint.json`
 
-### Step 6: Evaluation (8 Strategies)
+**Outputs:**
+- `models/checkpoints/checkpoint-*/`
+- `best_checkpoint.json`
+
+**Estimated time:** 8-12 hours for 5 epochs with 20K samples
+
+### Phase 3: Evaluation
+
+Run all 8 evaluation strategies:
+
 ```bash
-# Run all evaluations
-sbatch slurm_scripts/run_evals_only.slurm
-
-# Or individually:
 python 6a_Eval_ZeroShotBaseline.py
 python 6b_Eval_FewShotExemplar.py
 python 6c_Eval_RuleConstrained.py
@@ -130,29 +176,34 @@ python 6g1_Eval_BaseModel_ZeroShot.py
 python 6g2_Eval_BaseModel_CoT.py
 ```
 
-### Step 7: Analysis
+**Estimated time:** 30-60 minutes per strategy (1000 test samples)
+
+### Phase 4: Analysis
+
 ```bash
+python 7_SingleEvalAnalysis.py
 python 8_MultiEvalAnalysis.py
 python 9_ErrorAnalysis.py
-python 10_PublicationFigures.py
+python 10_AdditionalFigures.py
 ```
 
 ## Evaluation Strategies
 
-| Strategy | Preprocessing | Prompt Style | Description |
+| Strategy | Text Handling | Prompt Style | Description |
 |----------|---------------|--------------|-------------|
-| **6a** Zero-Shot | None | Zero-shot | Baseline fine-tuned model |
-| **6b** Few-Shot | None | Few-shot | Includes example predictions |
-| **6c** Rule-Constrained | None | With mappings | F-code mapping guidance |
-| **6d** Chain-of-Thought | None | CoT | Step-by-step reasoning (matches training) |
-| **6e** Keyword-Augmented | PSYCH_KEYWORDS | Zero-shot | Keyword extraction preprocessing |
-| **6f** Keyword + CoT | PSYCH_KEYWORDS | CoT | Combined approach |
-| **6g1** Base Zero-Shot | None | Zero-shot | Unfine-tuned baseline |
-| **6g2** Base CoT | None | CoT | Unfine-tuned + CoT |
+| **6a** Zero-Shot | Chunking | Zero-shot | Baseline fine-tuned model |
+| **6b** Few-Shot | Chunking | Few-shot | Includes example predictions |
+| **6c** Rule-Constrained | Chunking | With mappings | F-code mapping guidance |
+| **6d** Chain-of-Thought | Chunking | CoT | Step-by-step reasoning (matches training) |
+| **6e** Keyword-Augmented | Keywords | Zero-shot | Keyword extraction preprocessing |
+| **6f** Keyword + CoT | Keywords | CoT | Combined approach (best performance) |
+| **6g1** Base Zero-Shot | Chunking | Zero-shot | Unfine-tuned baseline |
+| **6g2** Base CoT | Chunking | CoT | Unfine-tuned + CoT |
 
 ### Prompt Styles
 
 **Zero-Shot** (6a, 6e, 6g1):
+
 ```
 Extract all psychiatric F-codes (F00-F99) from the clinical text.
 
@@ -163,6 +214,7 @@ Format response as:
 ```
 
 **Chain-of-Thought** (6d, 6f, 6g2, Training):
+
 ```
 Analyze the clinical text step by step to extract psychiatric F-codes (F00-F99).
 
@@ -190,6 +242,8 @@ Key parameters in `config.py`:
 | `LORA_ALPHA` | 32 | LoRA scaling factor |
 | `NUM_EPOCHS` | 5 | Training epochs |
 | `MAX_TRAIN_SAMPLES` | 20000 | Training sample limit |
+| `TRAIN_BATCH_SIZE` | 1 | Per-device batch size (32GB VRAM) |
+| `GRADIENT_ACCUMULATION_STEPS` | 4 | Effective batch size = 4 |
 
 ## Dataset Statistics
 
@@ -207,6 +261,7 @@ Key parameters in `config.py`:
 ## Output Format
 
 Predictions are simple JSON arrays:
+
 ```json
 ["F32.9", "F17.210", "F41.9"]
 ```
@@ -217,6 +272,50 @@ Predictions are simple JSON arrays:
 - **Macro F1**: Average per-code performance
 - **Sample-Avg F1**: Average per-sample performance
 - **Perfect Match Rate**: Exact match accuracy
+
+## Troubleshooting
+
+### Out-of-Memory During Model Loading (Exit Code 137)
+
+This occurs when system RAM is exhausted during model loading.
+
+**Solution (WSL2 users):**
+
+1. Create/edit `C:\Users\<username>\.wslconfig`:
+   ```ini
+   [wsl2]
+   memory=28GB
+   swap=8GB
+   ```
+
+2. Restart WSL2: `wsl --shutdown`
+
+3. Verify: `free -h` should show ~28GB available
+
+### CUDA Out-of-Memory During Training
+
+**Solution:** Verify batch size configuration in `config.py`:
+
+```python
+TRAIN_BATCH_SIZE = 1  # Per-device batch size
+GRADIENT_ACCUMULATION_STEPS = 4  # Effective batch size = 4
+```
+
+### Module Not Found Errors
+
+**Solution:** Ensure virtual environment is activated:
+
+```bash
+source venv/bin/activate
+which python  # Should show: .../venv/bin/python
+```
+
+### Check GPU Status
+
+```bash
+nvidia-smi  # View GPU memory usage
+python -c "import torch; print(torch.cuda.get_device_name(0))"
+```
 
 ## Known Limitations
 
@@ -255,10 +354,12 @@ This is expected behavior for discriminative models on imbalanced multi-label da
 
 ## License
 
-Research use only. MIMIC-IV data requires PhysioNet credentialed access and appropriate data use agreements.
+Apache License 2.0. See [LICENSE](LICENSE) for details.
+
+**Note:** MIMIC-IV data requires PhysioNet credentialed access and appropriate data use agreements.
 
 ## Acknowledgments
 
-- MIMIC-IV dataset (PhysioNet)
-- Unsloth for efficient fine-tuning
+- [MIMIC-IV dataset](https://physionet.org/content/mimiciv/) (PhysioNet)
+- [Unsloth](https://github.com/unslothai/unsloth) for efficient fine-tuning
 - GPT-OSS 20B base model
