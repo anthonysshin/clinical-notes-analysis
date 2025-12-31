@@ -782,10 +782,13 @@ class MIMICDatasetEDA:
             print("\n--- Chunking Statistics (from preparation) ---")
             chunk_stats = self.dataset_info['chunking_statistics']['train']
             print(f"  Total chunks:         {chunk_stats.get('total_chunks', 'N/A'):>10}")
-            print(f"  Avg chunks/sample:    {chunk_stats.get('avg_chunks_per_sample', 'N/A'):>10.2f}")
-            print(f"  Max chunks/sample:    {chunk_stats.get('max_chunks_per_sample', 'N/A'):>10}")
-            print(f"  Multi-chunk samples:  {chunk_stats.get('multi_chunk_samples', 'N/A'):>10} ({chunk_stats.get('multi_chunk_rate', 0)*100:.1f}%)")
-            print(f"  Single-chunk samples: {chunk_stats.get('single_chunk_samples', 'N/A'):>10}")
+            print(f"  Avg chunks/sample:    {chunk_stats.get('chunks_per_doc', 0):>10.2f}")
+            # Derive max chunks from chunk_distribution
+            chunk_dist = chunk_stats.get('chunk_distribution', {})
+            max_chunks = max((int(k) for k in chunk_dist.keys()), default=0) if chunk_dist else 'N/A'
+            print(f"  Max chunks/sample:    {max_chunks:>10}")
+            print(f"  Multi-chunk samples:  {chunk_stats.get('multi_chunk_docs', 'N/A'):>10} ({chunk_stats.get('multi_chunk_pct', 0):.1f}%)")
+            print(f"  Single-chunk samples: {chunk_stats.get('single_chunk_docs', 'N/A'):>10}")
 
         self.stats['chunking'] = {
             'full_train_samples': full_train_count,
@@ -1233,15 +1236,15 @@ class MIMICDatasetEDA:
         # Plot 3: Chunk distribution (pie chart)
         ax3 = fig.add_subplot(gs[0, 2])
         if chunk_stats:
-            single_chunk = chunk_stats.get('single_chunk_samples', 0)
-            multi_chunk = chunk_stats.get('multi_chunk_samples', 0)
+            single_chunk = chunk_stats.get('single_chunk_docs', 0)
+            multi_chunk = chunk_stats.get('multi_chunk_docs', 0)
             sizes = [single_chunk, multi_chunk]
             labels = [f'Single chunk\n({single_chunk:,})', f'Multi-chunk\n({multi_chunk:,})']
             colors3 = [COLORS['positive'], COLORS['primary']]
             wedges, texts, autotexts = ax3.pie(sizes, colors=colors3, autopct='%1.1f%%',
                                                 startangle=90, textprops={'fontsize': 9})
             ax3.legend(wedges, labels, loc='center left', bbox_to_anchor=(1, 0.5), fontsize=9)
-            ax3.set_title(f'Chunking Distribution\n(Avg: {chunk_stats.get("avg_chunks_per_sample", 0):.2f} chunks/sample)',
+            ax3.set_title(f'Chunking Distribution\n(Avg: {chunk_stats.get("chunks_per_doc", 0):.2f} chunks/sample)',
                          fontsize=12, fontweight='bold')
         else:
             ax3.text(0.5, 0.5, 'No chunking\nstatistics available',
