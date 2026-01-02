@@ -37,7 +37,7 @@ from config import (
     LOAD_IN_4BIT, TEMPERATURE,
     VAL_DATA_PATH, CHECKPOINT_DIR, FINAL_MODEL_DIR,
     DEFAULT_MAX_SAMPLES, COLORS, apply_figure_style,
-    OUTPUT_DIR_5_CHECKPOINT
+    OUTPUT_DIR_5_CHECKPOINT, MIN_CHECKPOINT_STEP
 )
 
 # Set seeds for reproducibility
@@ -572,8 +572,8 @@ def main():
                         help='Chunk overlap in tokens (default: 200)')
     parser.add_argument('--random-seed', type=int, default=RANDOM_SEED,
                         help='Random seed')
-    parser.add_argument('--min-checkpoint-step', type=int, default=0,
-                        help='Minimum checkpoint step to evaluate (default: 0)')
+    parser.add_argument('--min-checkpoint-step', type=int, default=MIN_CHECKPOINT_STEP,
+                        help=f'Minimum checkpoint step to evaluate (default: {MIN_CHECKPOINT_STEP})')
 
     args = parser.parse_args()
 

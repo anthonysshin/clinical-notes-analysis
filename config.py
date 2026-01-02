@@ -289,6 +289,7 @@ WARMUP_STEPS = 100
 # Checkpoint saving
 SAVE_STEPS = 500
 SAVE_TOTAL_LIMIT = None  # Keep all checkpoints for selection
+MIN_CHECKPOINT_STEP = 15000  # Skip early checkpoints during selection (evaluate from step 15000+)
 
 
 # =============================================================================
