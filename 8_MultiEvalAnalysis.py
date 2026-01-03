@@ -667,13 +667,13 @@ class ResultsAggregator:
         micro_f1_values = [s['micro_f1'] for s in strategy_data]
 
         # Create figure with more width for groups and extra bottom space for labels
-        fig, ax = plt.subplots(figsize=(16, 9))
-        plt.subplots_adjust(bottom=0.35, left=0.08)  # More space for rotated labels
+        fig, ax = plt.subplots(figsize=(18, 9))
+        plt.subplots_adjust(bottom=0.38, left=0.06, right=0.98)  # More space for rotated labels
 
         # Calculate x positions with gaps between groups
         x_pos = []
         current_x = 0
-        gap = 0.5  # Gap between groups
+        gap = 1.0  # Gap between groups for better label spacing
         for i, s in enumerate(strategy_data):
             if i > 0 and strategy_data[i]['group'] != strategy_data[i-1]['group']:
                 current_x += gap
@@ -696,15 +696,11 @@ class ResultsAggregator:
                     f'{f1_val:.4f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
 
         # Add group labels at the bottom
-        group_label_y = -0.18
+        group_label_y = -0.22
         for start, end, label in group_positions:
             mid_x = (x_pos[start] + x_pos[end]) / 2
             ax.text(mid_x, group_label_y, label, ha='center', va='top',
                     fontsize=12, fontweight='bold', transform=ax.get_xaxis_transform())
-            # Add group separator line
-            if end < len(x_pos) - 1:
-                sep_x = (x_pos[end] + x_pos[end + 1]) / 2
-                ax.axvline(x=sep_x, color='gray', linestyle='--', alpha=0.5, linewidth=1)
 
         # Statistical significance annotation: Top 1 vs Top 2 only
         all_sorted = sorted(strategy_data, key=lambda x: x['micro_f1'], reverse=True)
