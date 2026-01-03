@@ -667,8 +667,8 @@ class ResultsAggregator:
         micro_f1_values = [s['micro_f1'] for s in strategy_data]
 
         # Create figure with more width for groups and extra bottom space for labels
-        fig, ax = plt.subplots(figsize=(16, 8))
-        plt.subplots_adjust(bottom=0.25)  # More space for rotated labels
+        fig, ax = plt.subplots(figsize=(16, 9))
+        plt.subplots_adjust(bottom=0.30)  # More space for rotated labels
 
         # Calculate x positions with gaps between groups
         x_pos = []
@@ -725,7 +725,7 @@ class ResultsAggregator:
             idx2 = get_bar_index(all_sorted[1]['strategy_id'])
             if idx1 >= 0 and idx2 >= 0:
                 x1, x2 = x_pos[min(idx1, idx2)], x_pos[max(idx1, idx2)]
-                y_bracket1 = max_f1 + 0.045
+                y_bracket1 = max_f1 + 0.07  # Moved higher to avoid overlap with F1 value
 
                 ax.plot([x1, x1, x2, x2], [y_bracket1 - 0.01, y_bracket1, y_bracket1, y_bracket1 - 0.01],
                         color='black', linewidth=1.2)
@@ -751,7 +751,7 @@ class ResultsAggregator:
             idx3 = get_bar_index(all_sorted[2]['strategy_id'])
             if idx2 >= 0 and idx3 >= 0:
                 x1, x2 = x_pos[min(idx2, idx3)], x_pos[max(idx2, idx3)]
-                y_bracket2 = max_f1 + 0.095
+                y_bracket2 = max_f1 + 0.12  # Moved higher to maintain spacing
 
                 ax.plot([x1, x1, x2, x2], [y_bracket2 - 0.01, y_bracket2, y_bracket2, y_bracket2 - 0.01],
                         color='black', linewidth=1.2)
@@ -763,13 +763,13 @@ class ResultsAggregator:
         ax.set_xticklabels(display_names, rotation=45, ha='right', fontsize=10)
         ax.set_xlabel('')
         ax.set_ylabel('Micro F1 Score', fontsize=12, fontweight='bold')
-        ax.set_title('Evaluation Approach Comparison for Psychiatric F-Code Prediction (Grouped)',
+        ax.set_title('Evaluation Approach Comparison for Psychiatric F-Code Prediction',
                      fontsize=14, fontweight='bold', pad=15)
 
         # Grid and limits
         ax.yaxis.grid(True, linestyle='--', alpha=0.3)
         ax.set_axisbelow(True)
-        ax.set_ylim(0, max(micro_f1_values) * 1.30)
+        ax.set_ylim(0, max(micro_f1_values) * 1.35)  # Extra space for significance brackets
 
         plt.savefig(self.output_dir / 'fig1b_grouped_comparison.png', dpi=300, bbox_inches='tight')
         plt.savefig(self.output_dir / 'fig1b_grouped_comparison.pdf', bbox_inches='tight')
