@@ -668,7 +668,7 @@ class ResultsAggregator:
 
         # Create figure with more width for groups and extra bottom space for labels
         fig, ax = plt.subplots(figsize=(16, 9))
-        plt.subplots_adjust(bottom=0.30)  # More space for rotated labels
+        plt.subplots_adjust(bottom=0.35, left=0.08)  # More space for rotated labels
 
         # Calculate x positions with gaps between groups
         x_pos = []
@@ -706,11 +706,10 @@ class ResultsAggregator:
                 sep_x = (x_pos[end] + x_pos[end + 1]) / 2
                 ax.axvline(x=sep_x, color='gray', linestyle='--', alpha=0.5, linewidth=1)
 
-        # Statistical significance annotations
-        # Find top 3 strategies by F1
+        # Statistical significance annotation: Top 1 vs Top 2 only
         all_sorted = sorted(strategy_data, key=lambda x: x['micro_f1'], reverse=True)
 
-        if len(all_sorted) >= 3:
+        if len(all_sorted) >= 2:
             max_f1 = max(micro_f1_values)
 
             # Helper to get bar index
@@ -720,47 +719,35 @@ class ResultsAggregator:
                         return i
                 return -1
 
-            # Bracket 1: Top 1 vs Top 2
+            # Bracket: Top 1 vs Top 2
             idx1 = get_bar_index(all_sorted[0]['strategy_id'])
             idx2 = get_bar_index(all_sorted[1]['strategy_id'])
             if idx1 >= 0 and idx2 >= 0:
                 x1, x2 = x_pos[min(idx1, idx2)], x_pos[max(idx1, idx2)]
-                y_bracket1 = max_f1 + 0.07  # Moved higher to avoid overlap with F1 value
+                y_bracket = max_f1 + 0.05  # Slightly above F1 value
 
-                ax.plot([x1, x1, x2, x2], [y_bracket1 - 0.01, y_bracket1, y_bracket1, y_bracket1 - 0.01],
+                ax.plot([x1, x1, x2, x2], [y_bracket - 0.01, y_bracket, y_bracket, y_bracket - 0.01],
                         color='black', linewidth=1.2)
 
                 # Get significance annotation
                 if hasattr(self, 'statistical_results') and self.statistical_results:
                     p_val = self.statistical_results.get('paired_ttest', {}).get('p_value', 1.0)
                     if p_val < 0.001:
-                        sig1 = '***'
+                        sig_label = '***'
                     elif p_val < 0.01:
-                        sig1 = '**'
+                        sig_label = '**'
                     elif p_val < 0.05:
-                        sig1 = '*'
+                        sig_label = '*'
                     else:
-                        sig1 = 'ns'
+                        sig_label = 'ns'
                 else:
-                    sig1 = '*'  # Default based on known result
-                ax.text((x1 + x2) / 2, y_bracket1 + 0.008, sig1, ha='center', va='bottom',
-                        fontsize=11, fontweight='bold')
-
-            # Bracket 2: Top 2 vs Top 3
-            idx2 = get_bar_index(all_sorted[1]['strategy_id'])
-            idx3 = get_bar_index(all_sorted[2]['strategy_id'])
-            if idx2 >= 0 and idx3 >= 0:
-                x1, x2 = x_pos[min(idx2, idx3)], x_pos[max(idx2, idx3)]
-                y_bracket2 = max_f1 + 0.12  # Moved higher to maintain spacing
-
-                ax.plot([x1, x1, x2, x2], [y_bracket2 - 0.01, y_bracket2, y_bracket2, y_bracket2 - 0.01],
-                        color='black', linewidth=1.2)
-                ax.text((x1 + x2) / 2, y_bracket2 + 0.008, '****', ha='center', va='bottom',
+                    sig_label = '*'  # Default based on known result
+                ax.text((x1 + x2) / 2, y_bracket + 0.008, sig_label, ha='center', va='bottom',
                         fontsize=11, fontweight='bold')
 
         # Configure axes
         ax.set_xticks(x_pos)
-        ax.set_xticklabels(display_names, rotation=45, ha='right', fontsize=10)
+        ax.set_xticklabels(display_names, rotation=50, ha='right', fontsize=9)
         ax.set_xlabel('')
         ax.set_ylabel('Micro F1 Score', fontsize=12, fontweight='bold')
         ax.set_title('Evaluation Approach Comparison for Psychiatric F-Code Prediction',
@@ -769,7 +756,7 @@ class ResultsAggregator:
         # Grid and limits
         ax.yaxis.grid(True, linestyle='--', alpha=0.3)
         ax.set_axisbelow(True)
-        ax.set_ylim(0, max(micro_f1_values) * 1.35)  # Extra space for significance brackets
+        ax.set_ylim(0, max(micro_f1_values) * 1.25)  # Space for significance bracket
 
         plt.savefig(self.output_dir / 'fig1b_grouped_comparison.png', dpi=300, bbox_inches='tight')
         plt.savefig(self.output_dir / 'fig1b_grouped_comparison.pdf', bbox_inches='tight')
