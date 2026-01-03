@@ -667,13 +667,13 @@ class ResultsAggregator:
         micro_f1_values = [s['micro_f1'] for s in strategy_data]
 
         # Create figure with more width for groups and extra bottom space for labels
-        fig, ax = plt.subplots(figsize=(18, 9))
-        plt.subplots_adjust(bottom=0.38, left=0.06, right=0.98)  # More space for rotated labels
+        fig, ax = plt.subplots(figsize=(16, 9))
+        plt.subplots_adjust(bottom=0.42, left=0.06, right=0.98)  # More space for rotated labels
 
         # Calculate x positions with gaps between groups
         x_pos = []
         current_x = 0
-        gap = 1.0  # Gap between groups for better label spacing
+        gap = 0.6  # Gap between groups
         for i, s in enumerate(strategy_data):
             if i > 0 and strategy_data[i]['group'] != strategy_data[i-1]['group']:
                 current_x += gap
