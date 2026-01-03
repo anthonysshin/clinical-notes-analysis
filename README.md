@@ -267,6 +267,8 @@ Evaluation results on 1000 test samples (RTX 5090):
 - Fine-tuning improvement: +260% over base model
 - Statistical significance: p = 0.012 (vs Chain-of-Thought)
 
+See [RESULTS.md](RESULTS.md) for detailed per-code performance and error analysis.
+
 ## Troubleshooting
 
 ### Out-of-Memory During Model Loading (Exit Code 137)
