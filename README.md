@@ -135,7 +135,7 @@ python 1_DataPrep.py
 # Step 2: Create chunked instruction data for training
 python 2_PrepareInstructionData.py
 
-# Step 3: Exploratory data analysis (generates 11 figures)
+# Step 3: Exploratory data analysis (generates 5 figures)
 python 3_EDA.py
 ```
 

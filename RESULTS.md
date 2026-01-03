@@ -91,10 +91,9 @@ python 6g1_Eval_BaseModel_ZeroShot.py
 python 6g2_Eval_BaseModel_CoT.py
 
 # Run analysis
-python 7_SingleEvalAnalysis.py --results-dir outputs/6f_KeywordAugmentedCoT
-python 8_MultiEvalAnalysis.py
+python 7_MultiEvalAnalysis.py
+python 8_BestEvalAnalysis.py --results-dir outputs/6f_KeywordAugmentedCoT
 python 9_ErrorAnalysis.py
-python 10_AdditionalFigures.py
 ```
 
 ## Hardware
