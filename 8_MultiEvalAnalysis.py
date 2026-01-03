@@ -400,7 +400,8 @@ class ResultsAggregator:
         print(f"  Cohen's d: {cohens_d:.4f} ({effect_interp} effect)")
         print(f"  Mean difference: {top1_mean - top2_mean:.4f}")
 
-        results = {
+        # Store results for use in visualizations
+        self.statistical_results = {
             'top1_strategy': top1_id,
             'top1_name': top1_name,
             'top1_sample_avg_f1': float(top1_mean),
@@ -421,14 +422,13 @@ class ResultsAggregator:
             }
         }
 
-        # Store and save results
-        self.statistical_results = results
+        # Save results to file
         stats_path = self.output_dir / 'statistical_tests.json'
         with open(stats_path, 'w') as f:
-            json.dump(results, f, indent=2)
+            json.dump(self.statistical_results, f, indent=2)
         print(f"\nStatistical results saved: {stats_path}")
 
-        return results
+        return self.statistical_results
 
     def create_visualizations(self):
         """Create publication-ready visualizations."""
@@ -534,10 +534,23 @@ class ResultsAggregator:
             x1, x2 = min(idx1, idx2), max(idx1, idx2)
             y_bracket1 = max_f1 + 0.045
 
-            # Draw bracket
+            # Draw bracket with significance annotation based on actual statistical test
             ax.plot([x1, x1, x2, x2], [y_bracket1 - 0.01, y_bracket1, y_bracket1, y_bracket1 - 0.01],
                     color='black', linewidth=1.2)
-            ax.text((x1 + x2) / 2, y_bracket1 + 0.008, 'ns', ha='center', va='bottom',
+            # Determine annotation based on statistical test p-value
+            if hasattr(self, 'statistical_results') and self.statistical_results:
+                p_val = self.statistical_results.get('paired_ttest', {}).get('p_value', 1.0)
+                if p_val < 0.001:
+                    sig_annotation = '***'
+                elif p_val < 0.01:
+                    sig_annotation = '**'
+                elif p_val < 0.05:
+                    sig_annotation = '*'
+                else:
+                    sig_annotation = 'ns'
+            else:
+                sig_annotation = 'ns'
+            ax.text((x1 + x2) / 2, y_bracket1 + 0.008, sig_annotation, ha='center', va='bottom',
                     fontsize=11, fontweight='bold')
 
             if len(ft_strategies) >= 3:
