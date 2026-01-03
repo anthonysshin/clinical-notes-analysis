@@ -628,32 +628,32 @@ class ResultsAggregator:
         group_labels = []
         group_positions = []
 
-        # Group 1: Base
+        # Group 1: Base (use full names with "(No Fine-tuning)" suffix)
         group_start = 0
         for sid in base_strategies:
             if sid in all_strategy_data:
                 s = all_strategy_data[sid]
-                s['display_name'] = f"{s['short_name']}\n(Base)"
+                s['display_name'] = f"{s['name']}\n(No Fine-tuning)"
                 s['group'] = 'Base'
                 strategy_data.append(s)
         group_positions.append((group_start, len(strategy_data) - 1, 'Base'))
 
-        # Group 2: Prompting (sorted by F1 within group)
+        # Group 2: Prompting (sorted by F1 within group, use full names)
         group_start = len(strategy_data)
         prompting_data = [all_strategy_data[sid] for sid in prompting_strategies if sid in all_strategy_data]
         prompting_data.sort(key=lambda x: x['micro_f1'])
         for s in prompting_data:
-            s['display_name'] = s['short_name']
+            s['display_name'] = s['name']
             s['group'] = 'Prompting'
             strategy_data.append(s)
         group_positions.append((group_start, len(strategy_data) - 1, 'Prompting'))
 
-        # Group 3: Keyword Augmentation (Keyword-Augmented first, then Keyword + CoT)
+        # Group 3: Keyword Augmentation (Keyword-Augmented first, then Keyword + CoT, use full names)
         group_start = len(strategy_data)
         for sid in keyword_strategies:
             if sid in all_strategy_data:
                 s = all_strategy_data[sid]
-                s['display_name'] = s['short_name']
+                s['display_name'] = s['name']
                 s['group'] = 'Keyword'
                 strategy_data.append(s)
         group_positions.append((group_start, len(strategy_data) - 1, 'Keyword'))
@@ -666,8 +666,9 @@ class ResultsAggregator:
         display_names = [s['display_name'] for s in strategy_data]
         micro_f1_values = [s['micro_f1'] for s in strategy_data]
 
-        # Create figure with more width for groups
-        fig, ax = plt.subplots(figsize=(14, 7))
+        # Create figure with more width for groups and extra bottom space for labels
+        fig, ax = plt.subplots(figsize=(16, 8))
+        plt.subplots_adjust(bottom=0.25)  # More space for rotated labels
 
         # Calculate x positions with gaps between groups
         x_pos = []
@@ -695,11 +696,11 @@ class ResultsAggregator:
                     f'{f1_val:.4f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
 
         # Add group labels at the bottom
-        group_label_y = -0.08
+        group_label_y = -0.18
         for start, end, label in group_positions:
             mid_x = (x_pos[start] + x_pos[end]) / 2
             ax.text(mid_x, group_label_y, label, ha='center', va='top',
-                    fontsize=11, fontweight='bold', transform=ax.get_xaxis_transform())
+                    fontsize=12, fontweight='bold', transform=ax.get_xaxis_transform())
             # Add group separator line
             if end < len(x_pos) - 1:
                 sep_x = (x_pos[end] + x_pos[end + 1]) / 2
@@ -770,7 +771,6 @@ class ResultsAggregator:
         ax.set_axisbelow(True)
         ax.set_ylim(0, max(micro_f1_values) * 1.30)
 
-        plt.tight_layout()
         plt.savefig(self.output_dir / 'fig1b_grouped_comparison.png', dpi=300, bbox_inches='tight')
         plt.savefig(self.output_dir / 'fig1b_grouped_comparison.pdf', bbox_inches='tight')
         print("    Saved: fig1b_grouped_comparison.png/pdf")
