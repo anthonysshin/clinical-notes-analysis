@@ -436,7 +436,6 @@ class ResultsAggregator:
         print("CREATING VISUALIZATIONS")
         print("=" * 70)
 
-        self._plot_strategy_comparison_bar()
         self._plot_grouped_strategy_comparison()
         self._plot_precision_recall_comparison()
         self._plot_improvement_from_baseline()
@@ -754,9 +753,9 @@ class ResultsAggregator:
         ax.set_axisbelow(True)
         ax.set_ylim(0, max(micro_f1_values) * 1.25)  # Space for significance bracket
 
-        plt.savefig(self.output_dir / 'fig1b_grouped_comparison.png', dpi=300, bbox_inches='tight')
-        plt.savefig(self.output_dir / 'fig1b_grouped_comparison.pdf', bbox_inches='tight')
-        print("    Saved: fig1b_grouped_comparison.png/pdf")
+        plt.savefig(self.output_dir / 'fig1_strategy_comparison.png', dpi=300, bbox_inches='tight')
+        plt.savefig(self.output_dir / 'fig1_strategy_comparison.pdf', bbox_inches='tight')
+        print("    Saved: fig1_strategy_comparison.png/pdf")
         plt.close()
 
     def _get_strategy_colors(self):
