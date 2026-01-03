@@ -159,7 +159,7 @@ python 5_FindBestCheckpoint.py
 - `models/checkpoints/checkpoint-*/`
 - `best_checkpoint.json`
 
-> **Note:** Training time varies significantly based on hardware configuration.
+> **Note:** Training time varies based on hardware. On RTX 5090 (32GB), training took ~37 hours (25,000 steps).
 
 ### Phase 3: Evaluation
 
@@ -176,7 +176,7 @@ python 6g1_Eval_BaseModel_ZeroShot.py
 python 6g2_Eval_BaseModel_CoT.py
 ```
 
-> **Note:** Evaluation time varies based on hardware and the number of test samples (default: 1000).
+> **Note:** Evaluation time varies based on hardware. On RTX 5090, each fine-tuned strategy takes ~15-45 min (1000 samples). Base model evaluations take ~2.5 hours each.
 
 ### Phase 4: Analysis
 
@@ -246,6 +246,26 @@ Predictions are simple JSON arrays:
 - **Macro F1**: Average per-code performance
 - **Sample-Avg F1**: Average per-sample performance
 - **Perfect Match Rate**: Exact match accuracy
+
+## Results
+
+Evaluation results on 1000 test samples (RTX 5090):
+
+| Strategy | Micro F1 | Macro F1 | Perfect Match | Time |
+|----------|----------|----------|---------------|------|
+| Zero-Shot (Base) | 0.188 | 0.011 | 0.0% | 143 min |
+| CoT (Base) | 0.223 | 0.044 | 5.7% | 147 min |
+| Zero-Shot | 0.601 | 0.201 | 33.3% | 40 min |
+| Few-Shot | 0.620 | 0.225 | 35.1% | 42 min |
+| Rule-Constrained | 0.606 | 0.199 | 34.8% | 42 min |
+| Chain-of-Thought | 0.644 | 0.226 | 38.1% | 44 min |
+| Keyword-Augmented | 0.625 | 0.167 | 43.8% | 15 min |
+| **Keyword + CoT** | **0.675** | **0.211** | **46.9%** | **17 min** |
+
+**Key Findings:**
+- Best strategy: Keyword + CoT (Micro F1 = 0.675)
+- Fine-tuning improvement: +260% over base model
+- Statistical significance: p = 0.012 (vs Chain-of-Thought)
 
 ## Troubleshooting
 
