@@ -667,13 +667,13 @@ class ResultsAggregator:
         micro_f1_values = [s['micro_f1'] for s in strategy_data]
 
         # Create figure with more width for groups and extra bottom space for labels
-        fig, ax = plt.subplots(figsize=(16, 9))
-        plt.subplots_adjust(bottom=0.42, left=0.06, right=0.98)  # More space for rotated labels
+        fig, ax = plt.subplots(figsize=(14, 10))
+        plt.subplots_adjust(bottom=0.28, left=0.08, right=0.96)  # Space for rotated labels
 
         # Calculate x positions with gaps between groups
         x_pos = []
         current_x = 0
-        gap = 0.6  # Gap between groups
+        gap = 0.4  # Small gap between groups
         for i, s in enumerate(strategy_data):
             if i > 0 and strategy_data[i]['group'] != strategy_data[i-1]['group']:
                 current_x += gap
@@ -743,7 +743,7 @@ class ResultsAggregator:
 
         # Configure axes
         ax.set_xticks(x_pos)
-        ax.set_xticklabels(display_names, rotation=50, ha='right', fontsize=9)
+        ax.set_xticklabels(display_names, rotation=40, ha='right', fontsize=10)
         ax.set_xlabel('')
         ax.set_ylabel('Micro F1 Score', fontsize=12, fontweight='bold')
         ax.set_title('Evaluation Approach Comparison for Psychiatric F-Code Prediction',
