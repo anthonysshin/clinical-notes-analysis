@@ -578,7 +578,6 @@ def main():
     print("EVALUATION STRATEGY 6d: CHAIN-OF-THOUGHT with CHUNKING")
     print(f"Text Handling: Chunking ({CONFIG['chunk_size']} tokens, {CONFIG['chunk_overlap']} overlap)")
     print("Aggregation: Union | CoT: YES | Mappings: YES")
-    print("IMPORTANT: This prompt MATCHES the training prompt exactly!")
     print("=" * 80)
 
     evaluator = ChainOfThoughtEvaluator(CONFIG)

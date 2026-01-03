@@ -15,22 +15,16 @@ Analyses Performed:
     7. Chunking statistics analysis (training data)
 
 Output:
-    - 11 visualization figures (PNG)
+    - 5 visualization figures (PNG): 2 main + 3 supplementary
     - 4 summary CSV files
     - Console report with detailed statistics
 
 Figures Generated:
-    - fig1: Dataset split distribution
-    - fig2: Labels per sample distribution
-    - fig3: Top 20 F-codes
-    - fig4: Cumulative coverage
-    - fig5: Co-occurrence heatmap
-    - fig6: Text length distribution (words & tokens)
-    - fig7: Labels vs text length
-    - fig8: Section structure analysis
-    - fig9: Chunking statistics
-    - fig10: Rare code distribution
-    - fig11: Substance use severity level analysis
+    - fig1: F-code distribution (top 20 + long-tail)
+    - fig2: Text length distribution (words & tokens)
+    - figS1: Co-occurrence heatmap (supplementary)
+    - figS2: Section structure analysis (supplementary)
+    - figS3: Substance use severity analysis (supplementary)
 
 Usage:
     python 3_EDA.py --data-dir ./data --output-dir ./outputs/3_EDA
@@ -637,12 +631,6 @@ class MIMICDatasetEDA:
                 pct = count / total_substance_instances * 100
                 print(f"  {status:<15}: {count:>8,} ({pct:5.1f}%)")
 
-        # Key insight for paper
-        print(f"\n⚠ KEY INSIGHT FOR PAPER:")
-        print(f"  - Dependence ({severity_counts['Dependence']:,}) vs Abuse ({severity_counts['Abuse']:,})")
-        print(f"  - Models may struggle distinguishing severity levels")
-        print(f"  - Remission status often not explicitly documented")
-
         self.substance_analysis = {
             'total_instances': total_substance_instances,
             'severity_counts': severity_counts,
@@ -805,129 +793,24 @@ class MIMICDatasetEDA:
 
     def create_visualizations(self, fcode_counter, labels_per_sample,
                               cooccur_matrix, top_codes, chunking_data=None):
-        """Create all EDA visualizations in strategic order.
+        """Create EDA visualizations for journal submission.
 
-        Strategic Flow:
-            Group 1: Dataset Overview (Fig 1-2)
-            Group 2: F-Code Analysis (Fig 3-5)
-            Group 3: Clinical Note Characteristics (Fig 6-7)
-            Group 4: Chunking Analysis (Fig 8-9)
-            Group 5: Classification Challenges (Fig 10-11)
+        Figures:
+            Main: fig1 (F-code distribution), fig2 (text length)
+            Supplementary: figS1 (co-occurrence), figS2 (section structure), figS3 (severity)
         """
         print("\n" + "=" * 70)
         print("8. CREATING VISUALIZATIONS")
         print("=" * 70 + "\n")
 
-        # Group 1: Dataset Overview
-        self._plot_split_distribution()  # Fig 1
-        self._plot_labels_per_sample(labels_per_sample)  # Fig 2
+        # Main figures
+        self._plot_fcode_distribution(fcode_counter)  # fig1
+        self._plot_text_length_distribution()  # fig2
 
-        # Group 2: F-Code Analysis
-        self._plot_fcode_distribution(fcode_counter)  # Fig 3 (merged: top codes + long-tail)
-        self._plot_cumulative_coverage(fcode_counter)  # Fig 4
-        self._plot_cooccurrence_heatmap(cooccur_matrix, top_codes)  # Fig 5
-
-        # Group 3: Clinical Note Characteristics
-        self._plot_text_length_distribution()  # Fig 6
-        self._plot_labels_vs_text_length()  # Fig 7
-
-        # Group 4: Section Structure (shows why chunking captures all sections)
-        self._plot_section_structure()  # Fig 8
-
-        # Group 5: Chunking Statistics
-        if chunking_data and chunking_data[0] is not None:
-            chunked_counter, missing_codes, full_counter = chunking_data
-            self._plot_chunking_statistics(chunked_counter, full_counter)  # Fig 9
-
-        # Group 6: Classification Challenges
-        if chunking_data and chunking_data[0] is not None:
-            self._plot_rare_code_distribution(chunked_counter)  # Fig 10
-        self._plot_severity_analysis()  # Fig 11
-
-    def _plot_split_distribution(self):
-        """Plot dataset split distribution."""
-        print("  Creating dataset split distribution...")
-
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
-
-        split_counts = self.df['split'].value_counts()
-        colors = [COLORS['primary'], COLORS['positive'], COLORS['negative']]
-
-        # Bar chart
-        bars = ax1.bar(split_counts.index, split_counts.values, color=colors, alpha=0.8)
-
-        # Get max height for proper y-axis limit
-        max_height = max(split_counts.values)
-        ax1.set_ylim(0, max_height * 1.18)  # Add 18% margin for text labels
-
-        for bar in bars:
-            height = bar.get_height()
-            ax1.text(bar.get_x() + bar.get_width() / 2., height + max_height * 0.02,
-                     f'{int(height):,}\n({height / len(self.df) * 100:.1f}%)',
-                     ha='center', va='bottom', fontsize=11, fontweight='bold')
-
-        ax1.set_xlabel('Split', fontsize=12, fontweight='bold')
-        ax1.set_ylabel('Number of Samples', fontsize=12, fontweight='bold')
-        ax1.set_title('Dataset Split Distribution', fontsize=14, fontweight='bold')
-        ax1.grid(axis='y', alpha=0.3)
-
-        # Pie chart
-        ax2.pie(split_counts.values, labels=split_counts.index, colors=colors,
-                autopct='%1.1f%%', startangle=90,
-                textprops={'fontsize': 11, 'fontweight': 'bold'})
-        ax2.set_title('Dataset Split Proportions', fontsize=14, fontweight='bold')
-
-        plt.tight_layout()
-        plt.savefig(self.output_dir / 'fig1_dataset_split_distribution.png',
-                    dpi=300, bbox_inches='tight')
-        print("    Saved: fig1_dataset_split_distribution.png")
-        plt.close()
-
-    def _plot_labels_per_sample(self, labels_per_sample):
-        """Plot distribution of labels per sample."""
-        print("  Creating labels per sample distribution...")
-
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
-
-        # Count frequency for each label count (use bar chart instead of histogram for proper alignment)
-        label_counts = Counter(labels_per_sample)
-        max_label = max(labels_per_sample)
-        x_values = list(range(1, max_label + 1))
-        y_values = [label_counts.get(x, 0) for x in x_values]
-
-        # Bar chart with bars centered on x values
-        bars = ax1.bar(x_values, y_values, color=COLORS['primary'], alpha=0.7, edgecolor='black', width=0.8)
-
-        # Add mean and median lines
-        mean_val = np.mean(labels_per_sample)
-        median_val = np.median(labels_per_sample)
-        ax1.axvline(mean_val, color='red', linestyle='--', linewidth=2, label=f'Mean: {mean_val:.2f}')
-        ax1.axvline(median_val, color='green', linestyle='--', linewidth=2, label=f'Median: {median_val:.0f}')
-
-        # Set x-axis ticks to center on bars
-        ax1.set_xticks(x_values)
-        ax1.set_xticklabels([str(x) for x in x_values])
-        ax1.set_xlabel('Number of F-Codes per Sample', fontsize=11, fontweight='bold')
-        ax1.set_ylabel('Frequency', fontsize=11, fontweight='bold')
-        ax1.set_title('Distribution of Labels per Sample', fontsize=13, fontweight='bold')
-        ax1.legend(fontsize=10)
-        ax1.grid(axis='y', alpha=0.3)
-        ax1.set_xlim(0.5, max_label + 0.5)
-
-        # Cumulative distribution
-        sorted_labels = np.sort(labels_per_sample)
-        cumulative = np.arange(1, len(sorted_labels) + 1) / len(sorted_labels) * 100
-        ax2.plot(sorted_labels, cumulative, color=COLORS['positive'], linewidth=2)
-        ax2.set_xlabel('Number of F-Codes per Sample', fontsize=11, fontweight='bold')
-        ax2.set_ylabel('Cumulative Percentage (%)', fontsize=11, fontweight='bold')
-        ax2.set_title('Cumulative Distribution', fontsize=13, fontweight='bold')
-        ax2.grid(True, alpha=0.3)
-
-        plt.tight_layout()
-        plt.savefig(self.output_dir / 'fig2_labels_per_sample.png',
-                    dpi=300, bbox_inches='tight')
-        print("    Saved: fig2_labels_per_sample.png")
-        plt.close()
+        # Supplementary figures
+        self._plot_cooccurrence_heatmap(cooccur_matrix, top_codes)  # figS1
+        self._plot_section_structure()  # figS2
+        self._plot_severity_analysis()  # figS3
 
     def _plot_fcode_distribution(self, fcode_counter):
         """Plot comprehensive F-code distribution (top codes + long-tail)."""
@@ -981,9 +864,11 @@ class MIMICDatasetEDA:
 
         plt.suptitle('F-Code Frequency Distribution', fontsize=14, fontweight='bold', y=1.02)
         plt.tight_layout()
-        plt.savefig(self.output_dir / 'fig3_fcode_distribution.png',
+        plt.savefig(self.output_dir / 'fig1_fcode_distribution.png',
                     dpi=300, bbox_inches='tight')
-        print("    Saved: fig3_fcode_distribution.png")
+        plt.savefig(self.output_dir / 'fig1_fcode_distribution.pdf',
+                    bbox_inches='tight')
+        print("    Saved: fig1_fcode_distribution.png/pdf")
         plt.close()
 
     def _plot_text_length_distribution(self):
@@ -1052,9 +937,11 @@ class MIMICDatasetEDA:
             ax2.grid(axis='y', alpha=0.3)
 
         plt.tight_layout()
-        plt.savefig(self.output_dir / 'fig6_text_length_distribution.png',
+        plt.savefig(self.output_dir / 'fig2_text_length_distribution.png',
                     dpi=300, bbox_inches='tight')
-        print("    Saved: fig6_text_length_distribution.png")
+        plt.savefig(self.output_dir / 'fig2_text_length_distribution.pdf',
+                    bbox_inches='tight')
+        print("    Saved: fig2_text_length_distribution.png/pdf")
         plt.close()
 
     def _plot_cooccurrence_heatmap(self, cooccur_matrix, top_codes):
@@ -1087,277 +974,11 @@ class MIMICDatasetEDA:
         cbar.set_label('Co-occurrence Count', fontsize=11)
 
         plt.tight_layout()
-        plt.savefig(self.output_dir / 'fig5_cooccurrence_heatmap.png',
+        plt.savefig(self.output_dir / 'figS1_cooccurrence_heatmap.png',
                     dpi=300, bbox_inches='tight')
-        print("    Saved: fig5_cooccurrence_heatmap.png")
-        plt.close()
-
-    def _plot_labels_vs_text_length(self):
-        """Plot relationship between label count and text length (words) using hexbin."""
-        print("  Creating labels vs text length plot...")
-
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
-
-        # Left: Hexbin plot for density (use word_count for consistency)
-        hb = ax1.hexbin(self.df['word_count'], self.df['label_count'],
-                        gridsize=40, cmap='YlOrRd', mincnt=1)
-        ax1.set_xlabel('Text Length (words)', fontsize=12, fontweight='bold')
-        ax1.set_ylabel('Number of F-Codes', fontsize=12, fontweight='bold')
-        ax1.set_title('Text Length vs F-Codes (Density)',
-                      fontsize=13, fontweight='bold')
-        ax1.grid(True, alpha=0.3)
-        cbar1 = plt.colorbar(hb, ax=ax1)
-        cbar1.set_label('Count', fontsize=11)
-
-        # Right: Box plot by label count (use word_count for consistency)
-        label_counts = sorted(self.df['label_count'].unique())
-        data_by_label = [self.df[self.df['label_count'] == lc]['word_count'].values
-                         for lc in label_counts if lc <= 8]  # Limit to 8 for readability
-
-        bp = ax2.boxplot(data_by_label, labels=range(1, len(data_by_label) + 1),
-                         patch_artist=True)
-        for patch in bp['boxes']:
-            patch.set_facecolor(COLORS['primary'])
-            patch.set_alpha(0.7)
-
-        ax2.set_xlabel('Number of F-Codes', fontsize=12, fontweight='bold')
-        ax2.set_ylabel('Text Length (words)', fontsize=12, fontweight='bold')
-        ax2.set_title('Text Length Distribution by Label Count',
-                      fontsize=13, fontweight='bold')
-        ax2.grid(axis='y', alpha=0.3)
-        ax2.margins(y=0.1)
-
-        # Add sample counts with better positioning
-        for i, lc in enumerate(range(1, len(data_by_label) + 1)):
-            n = len(data_by_label[i])
-            ax2.text(i + 1, ax2.get_ylim()[1] * 0.95, f'n={n:,}',
-                     ha='center', va='top', fontsize=8)
-
-        plt.tight_layout()
-        plt.savefig(self.output_dir / 'fig7_labels_vs_length.png',
-                    dpi=300, bbox_inches='tight')
-        print("    Saved: fig7_labels_vs_length.png")
-        plt.close()
-
-    def _plot_cumulative_coverage(self, fcode_counter):
-        """Plot cumulative coverage of top-K codes."""
-        print("  Creating cumulative coverage plot...")
-
-        all_codes = sorted(fcode_counter.items(), key=lambda x: x[1], reverse=True)
-        total_instances = sum(count for _, count in all_codes)
-
-        cumulative_coverage = []
-        cumulative_sum = 0
-
-        for _, count in all_codes:
-            cumulative_sum += count
-            cumulative_coverage.append(cumulative_sum / total_instances * 100)
-
-        fig, ax = plt.subplots(figsize=(12, 8))
-
-        ax.plot(range(1, len(cumulative_coverage) + 1), cumulative_coverage,
-                color=COLORS['primary'], linewidth=2)
-
-        # Mark top-K points
-        for k in [3, 5, 10, 20, 50]:
-            if k <= len(cumulative_coverage):
-                ax.plot(k, cumulative_coverage[k - 1], 'ro', markersize=8)
-                ax.annotate(f'Top-{k}: {cumulative_coverage[k - 1]:.1f}%',
-                            xy=(k, cumulative_coverage[k - 1]),
-                            xytext=(10, -10), textcoords='offset points',
-                            fontsize=9,
-                            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.7))
-
-        ax.axhline(80, color='green', linestyle='--', alpha=0.5, label='80% Coverage')
-        ax.axhline(90, color='orange', linestyle='--', alpha=0.5, label='90% Coverage')
-
-        ax.set_xlabel('Number of Top F-Codes', fontsize=12, fontweight='bold')
-        ax.set_ylabel('Coverage (%)', fontsize=12, fontweight='bold')
-        ax.set_title('Cumulative Coverage by Top-K F-Codes',
-                     fontsize=14, fontweight='bold')
-        ax.grid(True, alpha=0.3)
-        ax.legend(fontsize=10)
-        ax.set_xlim(0, min(100, len(cumulative_coverage)))
-        ax.set_ylim(0, 105)
-
-        plt.tight_layout()
-        plt.savefig(self.output_dir / 'fig4_cumulative_coverage.png',
-                    dpi=300, bbox_inches='tight')
-        print("    Saved: fig4_cumulative_coverage.png")
-        plt.close()
-
-    def _plot_chunking_statistics(self, chunked_counter, full_counter):
-        """Plot chunking statistics analysis."""
-        print("  Creating chunking statistics figure...")
-
-        fig = plt.figure(figsize=(16, 10))
-        gs = fig.add_gridspec(2, 3, hspace=0.35, wspace=0.3)
-
-        # Get data
-        train_df = self.df[self.df['split'] == 'train']
-        full_samples = len(train_df)
-        chunked_samples = len(self.chunked_data['train'])
-        full_instances = sum(full_counter.values())
-        chunked_instances = sum(chunked_counter.values())
-
-        # Get chunking stats from dataset_info
-        chunk_stats = None
-        if self.dataset_info and 'chunking_statistics' in self.dataset_info:
-            chunk_stats = self.dataset_info['chunking_statistics']['train']
-
-        # Top row: Sample/Instance/Chunk preservation
-        # Plot 1: Sample preservation
-        ax1 = fig.add_subplot(gs[0, 0])
-        categories = ['Original', 'Chunked']
-        values = [full_samples, chunked_samples]
-        colors = [COLORS['primary'], COLORS['positive']]
-        bars = ax1.bar(categories, values, color=colors, alpha=0.8, edgecolor='black')
-        ax1.margins(y=0.15)
-        for bar, val in zip(bars, values):
-            ax1.text(bar.get_x() + bar.get_width() / 2., bar.get_height(),
-                     f'{val:,}', ha='center', va='bottom', fontsize=10, fontweight='bold')
-        ax1.set_ylabel('Number of Samples', fontsize=11, fontweight='bold')
-        ax1.set_title('Sample Preservation\n(100%)', fontsize=12, fontweight='bold')
-        ax1.grid(axis='y', alpha=0.3)
-
-        # Plot 2: F-code instance preservation
-        ax2 = fig.add_subplot(gs[0, 1])
-        values2 = [full_instances, chunked_instances]
-        bars2 = ax2.bar(categories, values2, color=colors, alpha=0.8, edgecolor='black')
-        ax2.margins(y=0.15)
-        for bar, val in zip(bars2, values2):
-            ax2.text(bar.get_x() + bar.get_width() / 2., bar.get_height(),
-                     f'{val:,}', ha='center', va='bottom', fontsize=10, fontweight='bold')
-        ax2.set_ylabel('F-Code Instances', fontsize=11, fontweight='bold')
-        pct = chunked_instances / full_instances * 100 if full_instances > 0 else 0
-        ax2.set_title(f'F-Code Instance Preservation\n({pct:.1f}%)', fontsize=12, fontweight='bold')
-        ax2.grid(axis='y', alpha=0.3)
-
-        # Plot 3: Chunk distribution (pie chart)
-        ax3 = fig.add_subplot(gs[0, 2])
-        if chunk_stats:
-            single_chunk = chunk_stats.get('single_chunk_docs', 0)
-            multi_chunk = chunk_stats.get('multi_chunk_docs', 0)
-            sizes = [single_chunk, multi_chunk]
-            labels = [f'Single chunk\n({single_chunk:,})', f'Multi-chunk\n({multi_chunk:,})']
-            colors3 = [COLORS['positive'], COLORS['primary']]
-            wedges, texts, autotexts = ax3.pie(sizes, colors=colors3, autopct='%1.1f%%',
-                                                startangle=90, textprops={'fontsize': 9})
-            ax3.legend(wedges, labels, loc='center left', bbox_to_anchor=(1, 0.5), fontsize=9)
-            ax3.set_title(f'Chunking Distribution\n(Avg: {chunk_stats.get("chunks_per_doc", 0):.2f} chunks/sample)',
-                         fontsize=12, fontweight='bold')
-        else:
-            ax3.text(0.5, 0.5, 'No chunking\nstatistics available',
-                     ha='center', va='center', fontsize=11)
-            ax3.set_title('Chunking Distribution', fontsize=12, fontweight='bold')
-
-        # Bottom row: Chunk configuration and code distribution
-        # Plot 4: Chunk configuration
-        ax4 = fig.add_subplot(gs[1, 0])
-        if chunk_stats:
-            config_data = ['Chunk\nSize', 'Chunk\nOverlap', 'Total\nChunks']
-            config_vals = [CHUNK_SIZE, CHUNK_OVERLAP, chunk_stats.get('total_chunks', 0)]
-            colors4 = [COLORS['primary'], COLORS['positive'], COLORS['quaternary']]
-            bars4 = ax4.bar(config_data, config_vals, color=colors4, alpha=0.8, edgecolor='black')
-            ax4.margins(y=0.15)
-            for bar, val in zip(bars4, config_vals):
-                ax4.text(bar.get_x() + bar.get_width() / 2., bar.get_height(),
-                         f'{val:,}', ha='center', va='bottom', fontsize=10, fontweight='bold')
-            ax4.set_ylabel('Value', fontsize=11, fontweight='bold')
-            ax4.set_title('Chunking Configuration', fontsize=12, fontweight='bold')
-        else:
-            ax4.text(0.5, 0.5, 'No chunking statistics', ha='center', va='center')
-        ax4.grid(axis='y', alpha=0.3)
-
-        # Plot 5: Top 10 F-code comparison
-        ax5 = fig.add_subplot(gs[1, 1:])
-        top_codes = [code for code, _ in full_counter.most_common(10)]
-        x = np.arange(len(top_codes))
-        width = 0.35
-
-        full_counts = [full_counter.get(code, 0) for code in top_codes]
-        chunk_counts = [chunked_counter.get(code, 0) for code in top_codes]
-
-        bars5a = ax5.bar(x - width/2, full_counts, width, label='Original',
-                         color=COLORS['primary'], alpha=0.8)
-        bars5b = ax5.bar(x + width/2, chunk_counts, width, label='Chunked',
-                         color=COLORS['positive'], alpha=0.8)
-
-        ax5.set_xticks(x)
-        ax5.set_xticklabels(top_codes, rotation=45, ha='right')
-        ax5.set_ylabel('Frequency', fontsize=11, fontweight='bold')
-        ax5.set_xlabel('F-Code', fontsize=11, fontweight='bold')
-        ax5.set_title('Top 10 F-Code Distribution: Original vs Chunked',
-                      fontsize=12, fontweight='bold')
-        ax5.legend(loc='upper right', fontsize=10)
-        ax5.grid(axis='y', alpha=0.3)
-
-        plt.suptitle('Chunking Statistics Analysis', fontsize=14, fontweight='bold', y=0.98)
-        plt.savefig(self.output_dir / 'fig9_chunking_statistics.png',
-                    dpi=300, bbox_inches='tight')
-        print("    Saved: fig9_chunking_statistics.png")
-        plt.close()
-
-    def _plot_rare_code_distribution(self, truncated_counter):
-        """Plot rare code distribution in training set."""
-        print("  Creating rare code distribution...")
-
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
-
-        freq_counts = list(truncated_counter.values())
-
-        # Plot 1: Histogram of code frequencies
-        ax1.hist(freq_counts, bins=50, color=COLORS['primary'], alpha=0.7, edgecolor='black')
-        ax1.axvline(np.median(freq_counts), color='red', linestyle='--', linewidth=2,
-                    label=f'Median: {np.median(freq_counts):.0f}')
-        ax1.axvline(np.mean(freq_counts), color='green', linestyle='--', linewidth=2,
-                    label=f'Mean: {np.mean(freq_counts):.1f}')
-
-        ax1.set_xlabel('Frequency (instances per code)', fontsize=11, fontweight='bold')
-        ax1.set_ylabel('Number of F-Codes', fontsize=11, fontweight='bold')
-        ax1.set_title('F-Code Frequency Distribution (Training)', fontsize=12, fontweight='bold')
-        ax1.legend(fontsize=10)
-        ax1.grid(axis='y', alpha=0.3)
-
-        # Plot 2: Pie chart of rarity categories
-        ranges = [
-            (1, 1, 'Singleton (1)', COLORS['negative']),
-            (2, 5, 'Very Rare (2-5)', '#FF9999'),
-            (6, 10, 'Rare (6-10)', '#FFCC99'),
-            (11, 50, 'Uncommon (11-50)', '#FFFF99'),
-            (51, 100, 'Moderate (51-100)', '#99FF99'),
-            (101, float('inf'), 'Common (>100)', COLORS['positive'])
-        ]
-
-        sizes = []
-        labels = []
-        colors = []
-        for low, high, label, color in ranges:
-            count = sum(1 for f in freq_counts if low <= f <= high)
-            if count > 0:
-                sizes.append(count)
-                labels.append(f'{label}\n({count} codes)')
-                colors.append(color)
-
-        wedges, texts, autotexts = ax2.pie(sizes, labels=labels, colors=colors,
-                                            autopct='%1.1f%%', startangle=90,
-                                            textprops={'fontsize': 9})
-        ax2.set_title('Code Rarity Distribution (Training)', fontsize=12, fontweight='bold')
-
-        # Add warning text
-        singleton_count = sum(1 for f in freq_counts if f == 1)
-        very_rare_count = sum(1 for f in freq_counts if f <= 5)
-        warning_text = (f"⚠ {singleton_count} codes have only 1 instance\n"
-                        f"⚠ {very_rare_count} codes have ≤5 instances\n"
-                        f"   ({very_rare_count / len(freq_counts) * 100:.1f}% of all codes)")
-        ax2.text(0.5, -0.15, warning_text, transform=ax2.transAxes,
-                 ha='center', fontsize=10, color='red',
-                 bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.8))
-
-        plt.tight_layout()
-        plt.savefig(self.output_dir / 'fig10_rare_code_distribution.png',
-                    dpi=300, bbox_inches='tight')
-        print("    Saved: fig10_rare_code_distribution.png")
+        plt.savefig(self.output_dir / 'figS1_cooccurrence_heatmap.pdf',
+                    bbox_inches='tight')
+        print("    Saved: figS1_cooccurrence_heatmap.png/pdf (Supplementary)")
         plt.close()
 
     def _plot_section_structure(self):
@@ -1523,9 +1144,11 @@ class MIMICDatasetEDA:
 
         fig.suptitle('Clinical Note Section Structure Analysis', fontsize=15, fontweight='bold')
 
-        plt.savefig(self.output_dir / 'fig8_section_structure.png',
+        plt.savefig(self.output_dir / 'figS2_section_structure.png',
                     dpi=300, bbox_inches='tight')
-        print("    Saved: fig8_section_structure.png")
+        plt.savefig(self.output_dir / 'figS2_section_structure.pdf',
+                    bbox_inches='tight')
+        print("    Saved: figS2_section_structure.png/pdf (Supplementary)")
         plt.close()
 
     def _plot_severity_analysis(self):
@@ -1624,9 +1247,11 @@ KEY CHALLENGES FOR MODEL:
         plt.suptitle('Substance Use Disorder Severity Analysis (F10-F19)',
                      fontsize=14, fontweight='bold', y=1.02)
         plt.tight_layout()
-        plt.savefig(self.output_dir / 'fig11_severity_analysis.png',
+        plt.savefig(self.output_dir / 'figS3_severity_analysis.png',
                     dpi=300, bbox_inches='tight')
-        print("    Saved: fig11_severity_analysis.png")
+        plt.savefig(self.output_dir / 'figS3_severity_analysis.pdf',
+                    bbox_inches='tight')
+        print("    Saved: figS3_severity_analysis.png/pdf (Supplementary)")
         plt.close()
 
     def create_summary_csv(self, fcode_counter, chunking_data=None):
@@ -1780,7 +1405,6 @@ KEY CHALLENGES FOR MODEL:
         print("\nGenerated files:")
         for file in sorted(self.output_dir.glob('*')):
             print(f"  - {file.name}")
-        print(f"\nReady for fine-tuning (4_FineTuning.py)")
 
 
 def main():

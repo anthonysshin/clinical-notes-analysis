@@ -271,8 +271,6 @@ TEMPERATURE = 0.0
 NUM_EPOCHS = 5
 
 # Maximum training samples for fine-tuning
-# NOTE: Sampling is done in 4_FineTuning.py (NOT in 2_PrepareInstructionData.py)
-# This allows flexible experimentation with different sample sizes
 MAX_TRAIN_SAMPLES = 20000
 
 # Training batch configuration (optimized for 32GB VRAM workstation)

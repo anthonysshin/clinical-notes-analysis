@@ -9,11 +9,11 @@ detailed performance visualizations.
 Analyses Performed:
     1. Overall performance summary
     2. Per-code performance analysis
-    3. Performance visualizations (3 main + 1 supplementary)
+    3. Performance visualizations (4 main + 1 supplementary)
     4. Category-wise performance breakdown
 
 Output:
-    - Performance visualization figures (PNG, PDF): fig1-fig3 (main), figS1 (supplementary)
+    - Performance visualization figures (PNG, PDF): fig1-fig4 (main), figS1 (supplementary)
     - Statistical analysis tables (CSV)
     - Summary report (JSON)
 
@@ -196,10 +196,76 @@ class ResultsAnalyzer:
         print("CREATING VISUALIZATIONS")
         print("=" * 70)
 
+        self._plot_training_loss_curve()
         self._plot_sample_f1_distribution()
         self._plot_per_code_heatmap()
         self._plot_category_performance()
         self._plot_frequency_vs_performance()  # Supplementary figure
+
+    def _plot_training_loss_curve(self):
+        """Create training loss curve from checkpoint trainer_state.json."""
+        print("  Creating training loss curve...")
+
+        # Load trainer state from latest checkpoint
+        trainer_state_path = Path('models/checkpoints/checkpoint-25000/trainer_state.json')
+        if not trainer_state_path.exists():
+            print(f"    Trainer state not found at {trainer_state_path}, skipping...")
+            return
+
+        with open(trainer_state_path, 'r') as f:
+            trainer_state = json.load(f)
+
+        log_history = trainer_state['log_history']
+
+        # Extract steps, loss, and learning rate
+        steps = [entry['step'] for entry in log_history if 'loss' in entry]
+        losses = [entry['loss'] for entry in log_history if 'loss' in entry]
+        lrs = [entry['learning_rate'] for entry in log_history if 'learning_rate' in entry]
+
+        # Create figure with dual y-axis
+        fig, ax1 = plt.subplots(figsize=(12, 6))
+
+        # Plot loss
+        color1 = '#2980b9'
+        ax1.set_xlabel('Training Steps', fontsize=12, fontweight='bold')
+        ax1.set_ylabel('Training Loss', fontsize=12, fontweight='bold', color=color1)
+        ax1.plot(steps, losses, color=color1, linewidth=1.5, alpha=0.8, label='Training Loss')
+        ax1.tick_params(axis='y', labelcolor=color1)
+        ax1.set_ylim(0, max(losses) * 1.1)
+
+        # Add smoothed loss (moving average)
+        window = 10
+        smoothed_loss = pd.Series(losses).rolling(window=window, min_periods=1).mean()
+        ax1.plot(steps, smoothed_loss, color='#c0392b', linewidth=2, label=f'Smoothed (window={window})')
+
+        # Plot learning rate on secondary axis
+        ax2 = ax1.twinx()
+        color2 = '#27ae60'
+        ax2.set_ylabel('Learning Rate', fontsize=12, fontweight='bold', color=color2)
+        ax2.plot(steps, lrs, color=color2, linewidth=1.5, linestyle='--', alpha=0.7, label='Learning Rate')
+        ax2.tick_params(axis='y', labelcolor=color2)
+        ax2.set_ylim(0, max(lrs) * 1.1)
+
+        # Add epoch markers
+        epoch_steps = [0, 5000, 10000, 15000, 20000, 25000]
+        for i, step in enumerate(epoch_steps):
+            ax1.axvline(x=step, color='gray', linestyle=':', alpha=0.5, linewidth=1)
+            if i < 5:
+                ax1.text(step + 200, max(losses) * 1.05, f'Epoch {i+1}', fontsize=9, color='gray')
+
+        # Combined legend
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper right', fontsize=10)
+
+        ax1.set_title('Training Loss and Learning Rate over Training Steps', fontsize=14, fontweight='bold')
+        ax1.grid(axis='y', alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig(self.output_dir / 'fig4_training_loss.png', dpi=300, bbox_inches='tight')
+        plt.savefig(self.output_dir / 'fig4_training_loss.pdf', bbox_inches='tight')
+        print("    Saved: fig4_training_loss.png/pdf")
+        plt.close()
 
     def _plot_sample_f1_distribution(self):
         """Plot distribution of F1 scores across samples."""
@@ -480,7 +546,6 @@ class ResultsAnalyzer:
         print("\nGenerated files:")
         for file in sorted(self.output_dir.glob('*')):
             print(f"  - {file.name}")
-        print("\nNext: Run 9_ErrorAnalysis.py for detailed error analysis")
 
 
 def main():
