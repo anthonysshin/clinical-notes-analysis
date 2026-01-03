@@ -109,7 +109,6 @@ clinical-notes-analysis/
 ├── 7_SingleEvalAnalysis.py         # Single strategy analysis
 ├── 8_MultiEvalAnalysis.py          # Comparative analysis
 ├── 9_ErrorAnalysis.py              # Error pattern analysis
-├── 10_AdditionalFigures.py         # Additional analysis figures
 ├── data/                           # Processed datasets (created by scripts)
 ├── models/                         # Fine-tuned checkpoints (created by scripts)
 └── outputs/                        # Evaluation results (created by scripts)
@@ -184,7 +183,6 @@ python 6g2_Eval_BaseModel_CoT.py
 python 7_SingleEvalAnalysis.py
 python 8_MultiEvalAnalysis.py
 python 9_ErrorAnalysis.py
-python 10_AdditionalFigures.py
 ```
 
 ## Evaluation Strategies
