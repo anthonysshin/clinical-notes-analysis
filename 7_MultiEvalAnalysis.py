@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-8_MultiEvalAnalysis.py - Aggregate and Compare Results Across All Evaluation Strategies
+7_MultiEvalAnalysis.py - Aggregate and Compare Results Across All Evaluation Strategies
 
 This script combines results from all evaluation strategies (6a-6f + base model)
 into a unified comparison with publication-ready visualizations and statistical tests.
@@ -13,12 +13,12 @@ Analyses Performed:
 
 Output:
     - Comparison tables (CSV, LaTeX)
-    - Publication figures (PNG, PDF): fig1-fig4
+    - Publication figures (PNG, PDF): fig1 (main), figS2 (supplementary)
     - Statistical test results (JSON)
     - Summary report
 
 Usage:
-    python 8_MultiEvalAnalysis.py --output-dir ./outputs/8_MultiEvalAnalysis
+    python 7_MultiEvalAnalysis.py --output-dir ./outputs/7_MultiEvalAnalysis
 
 Author: Clinical Note Analysis Study
 """
@@ -42,7 +42,7 @@ from config import (
     RANDOM_SEED, set_all_seeds,
     STRATEGY_COLORS, COLORS, FIGURE_STYLE,
     get_strategy_color, get_category_color, apply_figure_style,
-    OUTPUT_DIR, OUTPUT_DIR_8_COMPARISON, OUTPUT_DIR_6F
+    OUTPUT_DIR, OUTPUT_DIR_7_MULTI
 )
 
 warnings.filterwarnings('ignore')
@@ -130,25 +130,6 @@ STRATEGY_INFO = {
         'order': 7
     }
 }
-
-# F-code categories for grouping analysis
-FCODE_CATEGORIES = {
-    'Substance Use': ['F10', 'F11', 'F12', 'F13', 'F14', 'F15', 'F16', 'F17', 'F18', 'F19'],
-    'Mood Disorders': ['F30', 'F31', 'F32', 'F33', 'F34', 'F39'],
-    'Anxiety Disorders': ['F40', 'F41', 'F42', 'F43', 'F44', 'F45', 'F48'],
-    'Cognitive Disorders': ['F00', 'F01', 'F02', 'F03', 'F04', 'F05', 'F06', 'F07', 'F09'],
-    'Psychotic Disorders': ['F20', 'F21', 'F22', 'F23', 'F24', 'F25', 'F28', 'F29'],
-    'Other': ['F50', 'F51', 'F60', 'F63', 'F70', 'F79', 'F80', 'F84', 'F90', 'F91', 'F99']
-}
-
-
-def get_code_category(code):
-    """Get category for an F-code."""
-    prefix = code[:3] if len(code) >= 3 else code
-    for category, prefixes in FCODE_CATEGORIES.items():
-        if prefix in prefixes:
-            return category
-    return 'Other'
 
 
 class ResultsAggregator:
@@ -456,11 +437,7 @@ class ResultsAggregator:
         print("=" * 70)
 
         self._plot_grouped_strategy_comparison()
-        self._plot_precision_recall_comparison()
-        self._plot_improvement_from_baseline()
-        self._plot_radar_chart()
-        self._plot_per_code_heatmap()
-        self._plot_category_performance()
+        self._plot_precision_recall_comparison()  # Supplementary figure
 
     def _plot_strategy_comparison_bar(self):
         """Create bar chart comparing all strategies with statannotations for significance.
@@ -826,222 +803,9 @@ class ResultsAggregator:
         ax.legend(loc='lower left', fontsize=9)
 
         plt.tight_layout()
-        plt.savefig(self.output_dir / 'fig2_precision_recall.png', dpi=300, bbox_inches='tight')
-        plt.savefig(self.output_dir / 'fig2_precision_recall.pdf', bbox_inches='tight')
-        print("    Saved: fig2_precision_recall.png/pdf")
-        plt.close()
-
-    def _plot_improvement_from_baseline(self):
-        """Create chart showing improvement from base model."""
-        print("  Creating improvement chart...")
-
-        base_row = self.comparison_df[self.comparison_df['Fine-tuned'] == 'No']
-        if base_row.empty:
-            print("    No base model results - skipping improvement chart")
-            return
-
-        base_f1 = base_row.iloc[0]['Micro F1']
-        ft_df = self.comparison_df[self.comparison_df['Fine-tuned'] == 'Yes'].copy()
-        ft_df['Improvement'] = ft_df['Micro F1'] - base_f1
-        ft_df['Improvement %'] = (ft_df['Improvement'] / base_f1 * 100) if base_f1 > 0 else 0
-        ft_df = ft_df.sort_values('Improvement', ascending=True)
-
-        fig, ax = plt.subplots(figsize=(10, 6))
-
-        # Use dynamic colors
-        strategy_colors = self._get_strategy_colors()
-        colors = []
-        for s in ft_df['Strategy']:
-            strategy_id = next((k for k, v in STRATEGY_INFO.items() if v['name'] == s), None)
-            colors.append(strategy_colors.get(strategy_id, COLORS['neutral']))
-
-        y_pos = np.arange(len(ft_df))
-        bars = ax.barh(y_pos, ft_df['Improvement'], color=colors,
-                       edgecolor='black', linewidth=0.8)
-
-        # Add value labels
-        for bar, val, pct in zip(bars, ft_df['Improvement'], ft_df['Improvement %']):
-            x_pos = val + 0.005 if val >= 0 else val - 0.005
-            ha = 'left' if val >= 0 else 'right'
-            ax.text(x_pos, bar.get_y() + bar.get_height()/2,
-                    f'+{val:.3f} ({pct:.1f}%)', va='center', ha=ha,
-                    fontsize=10, fontweight='bold')
-
-        ax.set_yticks(y_pos)
-        ax.set_yticklabels(ft_df['Strategy'])
-        ax.set_xlabel('Micro F1 Improvement over Base Model', fontsize=12, fontweight='bold')
-        ax.set_title(f'Fine-tuning Improvement\n(Base Model F1 = {base_f1:.3f})',
-                     fontsize=14, fontweight='bold')
-        ax.axvline(x=0, color='black', linewidth=1)
-        ax.grid(axis='x', alpha=0.3)
-
-        plt.tight_layout()
-        plt.savefig(self.output_dir / 'fig3_improvement.png', dpi=300, bbox_inches='tight')
-        plt.savefig(self.output_dir / 'fig3_improvement.pdf', bbox_inches='tight')
-        print("    Saved: fig3_improvement.png/pdf")
-        plt.close()
-
-    def _plot_radar_chart(self):
-        """Create radar chart comparing strategies across metrics."""
-        print("  Creating radar chart...")
-
-        metrics = ['Micro P', 'Micro R', 'Micro F1', 'Macro F1', 'Perfect Match %']
-        n_metrics = len(metrics)
-
-        # Normalize perfect match % to 0-1 scale
-        df = self.comparison_df.copy()
-        df['Perfect Match %'] = df['Perfect Match %'] / 100
-
-        angles = np.linspace(0, 2 * np.pi, n_metrics, endpoint=False).tolist()
-        angles += angles[:1]  # Complete the loop
-
-        fig, ax = plt.subplots(figsize=(10, 10), subplot_kw=dict(polar=True))
-
-        # Use dynamic colors
-        strategy_colors = self._get_strategy_colors()
-
-        for _, row in df.iterrows():
-            strategy_id = next((k for k, v in STRATEGY_INFO.items() if v['name'] == row['Strategy']), None)
-            if not strategy_id:
-                continue
-
-            info = STRATEGY_INFO[strategy_id]
-            color = strategy_colors.get(strategy_id, COLORS['neutral'])
-            values = [row[m] for m in metrics]
-            values += values[:1]
-
-            ax.plot(angles, values, 'o-', linewidth=2, color=color,
-                    label=info['short_name'], alpha=0.8)
-            ax.fill(angles, values, alpha=0.1, color=color)
-
-        ax.set_xticks(angles[:-1])
-        ax.set_xticklabels(['Precision', 'Recall', 'Micro F1', 'Macro F1', 'Perfect Match'],
-                           fontsize=11)
-        ax.set_ylim(0, 1)
-        ax.set_title('Multi-Metric Strategy Comparison', fontsize=14, fontweight='bold', pad=20)
-        ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.0))
-
-        plt.tight_layout()
-        plt.savefig(self.output_dir / 'fig4_radar.png', dpi=300, bbox_inches='tight')
-        plt.savefig(self.output_dir / 'fig4_radar.pdf', bbox_inches='tight')
-        print("    Saved: fig4_radar.png/pdf")
-        plt.close()
-
-    def _plot_per_code_heatmap(self):
-        """Create heatmap showing per-code performance (top 20 codes by frequency)."""
-        print("  Creating per-code performance heatmap...")
-
-        # Load per-code performance from best strategy
-        per_code_files = list(Path(OUTPUT_DIR_6F).glob('per_code_performance_*.csv'))
-        if not per_code_files:
-            print("    Per-code file not found, skipping...")
-            return
-
-        per_code_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
-        df = pd.read_csv(per_code_files[0])
-
-        # Get top 20 codes by occurrences (frequency)
-        df_sorted = df.sort_values('occurrences', ascending=False).head(20)
-
-        # Create heatmap
-        fig, ax = plt.subplots(figsize=(10, 8))
-
-        heatmap_data = df_sorted[['precision', 'recall', 'f1_score']].values
-
-        sns.heatmap(heatmap_data,
-                    annot=True,
-                    fmt='.2f',
-                    cmap='RdYlGn',
-                    vmin=0, vmax=1,
-                    xticklabels=['Precision', 'Recall', 'F1'],
-                    yticklabels=[f"{row['f_code']} (n={int(row['occurrences'])})"
-                                for _, row in df_sorted.iterrows()],
-                    ax=ax)
-
-        ax.set_title('Per-Code Performance (Top 20 by Frequency)\nKeyword + CoT Strategy',
-                     fontsize=14, fontweight='bold')
-        ax.set_xlabel('Metric', fontsize=12)
-        ax.set_ylabel('F-Code (Support)', fontsize=12)
-
-        plt.tight_layout()
-        plt.savefig(self.output_dir / 'fig5_per_code_heatmap.png', dpi=300, bbox_inches='tight')
-        plt.savefig(self.output_dir / 'fig5_per_code_heatmap.pdf', bbox_inches='tight')
-        print("    Saved: fig5_per_code_heatmap.png/pdf")
-        plt.close()
-
-    def _plot_category_performance(self):
-        """Create performance breakdown by F-code category."""
-        print("  Creating category performance chart...")
-
-        # Load predictions from best strategy
-        pred_files = list(Path(OUTPUT_DIR_6F).glob('predictions_*.csv'))
-        if not pred_files:
-            print("    Predictions file not found, skipping...")
-            return
-
-        pred_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
-        df = pd.read_csv(pred_files[0])
-
-        # Calculate per-category metrics
-        category_metrics = defaultdict(lambda: {'tp': 0, 'fp': 0, 'fn': 0})
-
-        for _, row in df.iterrows():
-            actual = set(str(row['actual_f_codes']).split('; ')) if pd.notna(row['actual_f_codes']) else set()
-            predicted = set(str(row['predicted_f_codes']).split('; ')) if pd.notna(row['predicted_f_codes']) else set()
-
-            actual = {c.strip() for c in actual if c.strip()}
-            predicted = {c.strip() for c in predicted if c.strip()}
-
-            for code in actual | predicted:
-                category = get_code_category(code)
-                if code in actual and code in predicted:
-                    category_metrics[category]['tp'] += 1
-                elif code in predicted and code not in actual:
-                    category_metrics[category]['fp'] += 1
-                elif code in actual and code not in predicted:
-                    category_metrics[category]['fn'] += 1
-
-        # Calculate F1 for each category
-        categories = []
-        f1_scores = []
-        precisions = []
-        recalls = []
-
-        for category in ['Substance Use', 'Mood Disorders', 'Anxiety Disorders',
-                         'Cognitive Disorders', 'Psychotic Disorders', 'Other']:
-            m = category_metrics[category]
-            precision = m['tp'] / (m['tp'] + m['fp']) if (m['tp'] + m['fp']) > 0 else 0
-            recall = m['tp'] / (m['tp'] + m['fn']) if (m['tp'] + m['fn']) > 0 else 0
-            f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
-
-            categories.append(category)
-            f1_scores.append(f1)
-            precisions.append(precision)
-            recalls.append(recall)
-
-        # Create grouped bar chart
-        fig, ax = plt.subplots(figsize=(12, 6))
-
-        x = np.arange(len(categories))
-        width = 0.25
-
-        ax.bar(x - width, precisions, width, label='Precision', color='#3498db', alpha=0.8)
-        ax.bar(x, recalls, width, label='Recall', color='#e74c3c', alpha=0.8)
-        ax.bar(x + width, f1_scores, width, label='F1', color='#27ae60', alpha=0.8)
-
-        ax.set_xlabel('F-Code Category', fontsize=12, fontweight='bold')
-        ax.set_ylabel('Score', fontsize=12, fontweight='bold')
-        ax.set_title('Performance by F-Code Category\nKeyword + CoT Strategy', fontsize=14, fontweight='bold')
-        ax.set_xticks(x)
-        ax.set_xticklabels(categories, rotation=45, ha='right')
-        ax.legend(loc='upper right')
-        ax.set_ylim(0, 1.0)
-        ax.grid(axis='y', alpha=0.3)
-
-        plt.tight_layout()
-        plt.savefig(self.output_dir / 'fig6_category_performance.png', dpi=300, bbox_inches='tight')
-        plt.savefig(self.output_dir / 'fig6_category_performance.pdf', bbox_inches='tight')
-        print("    Saved: fig6_category_performance.png/pdf")
+        plt.savefig(self.output_dir / 'figS2_precision_recall.png', dpi=300, bbox_inches='tight')
+        plt.savefig(self.output_dir / 'figS2_precision_recall.pdf', bbox_inches='tight')
+        print("    Saved: figS2_precision_recall.png/pdf (Supplementary)")
         plt.close()
 
     def create_summary_report(self):
@@ -1138,7 +902,7 @@ def main():
     parser.add_argument(
         "--output-dir",
         type=str,
-        default=OUTPUT_DIR_8_COMPARISON,
+        default=OUTPUT_DIR_7_MULTI,
         help="Output directory for aggregated results"
     )
 

@@ -398,40 +398,6 @@ class ErrorAnalyzer:
         print("    Saved: fig2_fp_fn_comparison.png/pdf")
         plt.close()
 
-        # Figure 3: Error category pie chart
-        categories = self.categorize_errors()
-
-        fig, ax = plt.subplots(figsize=(10, 8))
-
-        sizes = [
-            len(categories['perfect_match']),
-            len(categories['partial_match']),
-            len(categories['complete_miss']),
-            len(categories['false_positive_only'])
-        ]
-        labels = ['Perfect Match', 'Partial Match', 'Complete Miss', 'FP Only']
-        colors = [COLORS['true_positive'], COLORS['highlight'], COLORS['negative'], COLORS['quaternary']]
-
-        # Remove zero-size categories
-        non_zero = [(l, s, c) for l, s, c in zip(labels, sizes, colors) if s > 0]
-        if non_zero:
-            labels, sizes, colors = zip(*non_zero)
-
-            wedges, texts, autotexts = ax.pie(
-                sizes, labels=labels, colors=colors,
-                autopct=lambda pct: f'{pct:.1f}%\n({int(pct/100*sum(sizes))})',
-                startangle=90,
-                textprops={'fontsize': 11}
-            )
-
-            ax.set_title('Prediction Quality Distribution', fontsize=14, fontweight='bold')
-
-        plt.tight_layout()
-        plt.savefig(self.output_dir / 'fig3_error_categories.png', dpi=300, bbox_inches='tight')
-        plt.savefig(self.output_dir / 'fig3_error_categories.pdf', bbox_inches='tight')
-        print("    Saved: fig3_error_categories.png/pdf")
-        plt.close()
-
     def save_error_report(
         self,
         categories: Dict,

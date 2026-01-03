@@ -106,8 +106,8 @@ clinical-notes-analysis/
 ├── 6f_Eval_KeywordAugmentedCoT.py  # Keyword preprocessing + CoT
 ├── 6g1_Eval_BaseModel_ZeroShot.py  # Base model zero-shot
 ├── 6g2_Eval_BaseModel_CoT.py       # Base model CoT
-├── 7_SingleEvalAnalysis.py         # Single strategy analysis
-├── 8_MultiEvalAnalysis.py          # Comparative analysis
+├── 7_MultiEvalAnalysis.py          # All-strategy comparative analysis
+├── 8_BestEvalAnalysis.py           # Best strategy detailed analysis
 ├── 9_ErrorAnalysis.py              # Error pattern analysis
 ├── data/                           # Processed datasets (created by scripts)
 ├── models/                         # Fine-tuned checkpoints (created by scripts)
@@ -180,8 +180,8 @@ python 6g2_Eval_BaseModel_CoT.py
 ### Phase 4: Analysis
 
 ```bash
-python 7_SingleEvalAnalysis.py
-python 8_MultiEvalAnalysis.py
+python 7_MultiEvalAnalysis.py
+python 8_BestEvalAnalysis.py
 python 9_ErrorAnalysis.py
 ```
 
