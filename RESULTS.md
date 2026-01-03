@@ -35,8 +35,9 @@ Evaluated on 1,000 test samples from MIMIC-IV discharge summaries.
    - Base model: 0.188 vs Fine-tuned best: 0.675
 
 3. **Statistical Significance**:
-   - Keyword + CoT vs Chain-of-Thought: t = 2.505, p = 0.012 (significant)
-   - Effect size (Cohen's d): 0.079 (small but significant)
+   - Keyword + CoT vs Chain-of-Thought: t = 2.505, **p = 0.012** (statistically significant at p < 0.05)
+   - Effect size (Cohen's d): 0.079 (negligible practical difference)
+   - Note: Large sample size (n=1000) enables detection of small differences
 
 4. **Efficiency**:
    - Keyword-based strategies are 2-3x faster than chunking-based strategies

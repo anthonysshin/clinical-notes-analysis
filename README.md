@@ -265,7 +265,7 @@ Evaluation results on 1000 test samples (RTX 5090):
 **Key Findings:**
 - Best strategy: Keyword + CoT (Micro F1 = 0.675)
 - Fine-tuning improvement: +260% over base model
-- Statistical significance: p = 0.012 (vs Chain-of-Thought)
+- Statistical significance: p = 0.012 (vs Chain-of-Thought), Cohen's d = 0.079 (negligible effect)
 
 See [RESULTS.md](RESULTS.md) for detailed per-code performance and error analysis.
 
