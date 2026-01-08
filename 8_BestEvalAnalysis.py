@@ -23,6 +23,7 @@ Usage:
 Author: Clinical Note Analysis Study
 """
 
+import sys
 import json
 import pandas as pd
 import numpy as np
@@ -38,6 +39,14 @@ from config import OUTPUT_DIR_8_BEST, OUTPUT_DIR, OUTPUT_DIR_6F
 from collections import defaultdict
 
 warnings.filterwarnings('ignore')
+
+# Import checkpoint selection helper
+sys.path.insert(0, str(Path(__file__).parent))
+from importlib.util import spec_from_file_location, module_from_spec
+_spec = spec_from_file_location("checkpoint_finder", Path(__file__).parent / "5_FindBestCheckpoint.py")
+_checkpoint_module = module_from_spec(_spec)
+_spec.loader.exec_module(_checkpoint_module)
+get_best_checkpoint_path = _checkpoint_module.get_best_checkpoint_path
 
 # F-code categories for grouping analysis
 FCODE_CATEGORIES = {
@@ -206,8 +215,9 @@ class ResultsAnalyzer:
         """Create training loss curve from checkpoint trainer_state.json."""
         print("  Creating training loss curve...")
 
-        # Load trainer state from latest checkpoint
-        trainer_state_path = Path('models/checkpoints/checkpoint-25000/trainer_state.json')
+        # Load trainer state from best checkpoint (dynamically determined)
+        best_checkpoint = get_best_checkpoint_path(require_exists=False)
+        trainer_state_path = Path(best_checkpoint) / "trainer_state.json"
         if not trainer_state_path.exists():
             print(f"    Trainer state not found at {trainer_state_path}, skipping...")
             return
