@@ -27,7 +27,7 @@ This project implements a chunking-based approach to handle long clinical docume
 ### Software
 
 - Python 3.10+
-- PyTorch 2.0+ with CUDA 12.1+
+- PyTorch 2.9+ nightly with CUDA 12.8 (required for RTX 50 series/Blackwell)
 - Unsloth (efficient fine-tuning)
 - Transformers 4.35+
 
@@ -63,15 +63,16 @@ Restart WSL2:
 wsl --shutdown
 ```
 
-### Step 3: Create Virtual Environment
+### Step 3: Create Conda Environment
 
 ```bash
-# Create and activate virtual environment
-python -m venv venv
-source venv/bin/activate  # Linux/macOS/WSL
+# Create and activate conda environment
+conda create -n unsloth-blackwell python=3.12 -y
+conda activate unsloth-blackwell
 
-# Install PyTorch with CUDA support
-pip install torch --index-url https://download.pytorch.org/whl/cu121
+# Install PyTorch nightly with CUDA 12.8 (REQUIRED for RTX 50 series)
+# WARNING: Stable PyTorch and cu121/cu124 do NOT work with RTX 50 series
+pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
 
 # Install project dependencies
 pip install -r requirements.txt
@@ -83,9 +84,11 @@ pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
 ### Step 4: Verify Installation
 
 ```bash
-python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.cuda.is_available()}')"
+python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.cuda.is_available()}, GPU: {torch.cuda.get_device_name(0)}')"
 python -c "from unsloth import FastLanguageModel; print('Unsloth: OK')"
 ```
+
+> **Note:** PyTorch version should show `+cu128` suffix (e.g., `2.9.1+cu128`) for RTX 50 series compatibility.
 
 ## Project Structure
 
@@ -303,6 +306,36 @@ GRADIENT_ACCUMULATION_STEPS = 4  # Effective batch size = 4
 source venv/bin/activate
 which python  # Should show: .../venv/bin/python
 ```
+
+### PyTorch Compatibility Issues (Newer GPUs)
+
+If you encounter PyTorch-related errors on newer GPUs (e.g., RTX 50 series, Blackwell architecture), the stable PyTorch release may not yet support your hardware.
+
+**Common Error Messages:**
+- `CUDA capability sm_120 is not compatible`
+- `RuntimeError: no kernel image is available for execution on the device`
+- `CUDA error: no kernel image is available`
+
+**Solution:** Install PyTorch nightly with CUDA 12.8 support:
+
+```bash
+pip uninstall torch torchvision torchaudio -y
+pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
+```
+
+**Common Mistakes to Avoid:**
+- Do NOT use `cu121` - insufficient for Blackwell architecture
+- Do NOT use `cu124` - will cause "no kernel image" errors
+- Do NOT use stable PyTorch releases - no sm_120 support yet
+- MUST use `cu128` (CUDA 12.8) nightly build for RTX 50 series
+
+**Verify installation:**
+
+```bash
+python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.cuda.is_available()}')"
+```
+
+> **Note on Library Compatibility:** Some libraries (e.g., PEFT, Unsloth) may have compatibility issues with PyTorch nightly builds. If you encounter crashes like "Aborted (core dumped)", this may be due to library incompatibility rather than PyTorch itself. Check for updated library versions or wait for stable PyTorch release with Blackwell support.
 
 ### Check GPU Status
 

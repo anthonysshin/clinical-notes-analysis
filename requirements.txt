@@ -2,10 +2,18 @@
 # requirements.txt - Clinical Note Analysis Project
 # =============================================================================
 #
-# Installation:
-#   pip install -r requirements.txt
+# IMPORTANT: This project was tested on RTX 5090 (Blackwell architecture)
+# which requires PyTorch nightly with CUDA 12.8. Install PyTorch BEFORE
+# installing this requirements file:
 #
-# For GPU support with PyTorch, install PyTorch separately first:
+#   pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
+#
+# WARNING for RTX 50 series users:
+#   - Do NOT use stable PyTorch releases - no sm_120 support
+#   - Do NOT use cu121 or cu124 - will cause "no kernel image" errors
+#   - MUST use cu128 (CUDA 12.8) nightly build
+#
+# For older GPUs (RTX 40 series and below), stable PyTorch with cu121 may work:
 #   pip install torch --index-url https://download.pytorch.org/whl/cu121
 #
 # =============================================================================
@@ -26,8 +34,7 @@ datasets>=2.14.0
 sentencepiece>=0.1.99
 
 # Unsloth (for efficient fine-tuning)
-# Install separately: pip install unsloth
-# unsloth>=2024.1
+unsloth @ git+https://github.com/unslothai/unsloth.git
 
 # Visualization
 matplotlib>=3.7.0
