@@ -572,8 +572,8 @@ class ResultsAggregator:
         ax.set_title('Evaluation Approach Comparison for Psychiatric F-Code Prediction',
                      fontsize=14, fontweight='bold', pad=15)
 
-        # Grid and limits
-        ax.yaxis.grid(True, linestyle='--', alpha=0.3)
+        # Horizontal gridlines only and limits
+        ax.yaxis.grid(True, linestyle='-', alpha=0.3, color='grey')
         ax.set_axisbelow(True)
         ax.set_ylim(0, max(micro_f1_values) * 1.28)  # Extra space for brackets
 
@@ -746,8 +746,8 @@ class ResultsAggregator:
         ax.set_title('Evaluation Approach Comparison for Psychiatric F-Code Prediction',
                      fontsize=14, fontweight='bold', pad=15)
 
-        # Grid and limits
-        ax.yaxis.grid(True, linestyle='--', alpha=0.3)
+        # Horizontal gridlines only and limits
+        ax.yaxis.grid(True, linestyle='-', alpha=0.3, color='grey')
         ax.set_axisbelow(True)
         ax.set_ylim(0, max(micro_f1_values) * 1.25)  # Space for significance bracket
 
@@ -799,7 +799,7 @@ class ResultsAggregator:
         ax.set_title('Precision-Recall Trade-off by Strategy', fontsize=14, fontweight='bold')
         ax.set_xlim(0, 1.05)
         ax.set_ylim(0, 1.05)
-        ax.grid(True, alpha=0.3)
+        ax.yaxis.grid(True, linestyle='-', alpha=0.3, color='grey')
         ax.legend(loc='lower left', fontsize=9)
 
         plt.tight_layout()

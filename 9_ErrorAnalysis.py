@@ -41,7 +41,7 @@ warnings.filterwarnings('ignore')
 
 # Apply publication-ready figure style
 apply_figure_style()
-sns.set_style("whitegrid")
+sns.set_style("white")  # Clean background, horizontal gridlines added manually
 
 
 class ErrorAnalyzer:
@@ -371,7 +371,6 @@ class ErrorAnalyzer:
             ax1.set_xlabel('Count', fontsize=11, fontweight='bold')
             ax1.set_title('Top 15 False Positives\n(Over-predicted)', fontsize=13, fontweight='bold')
             ax1.invert_yaxis()
-            ax1.grid(axis='x', alpha=0.3)
 
             for i, count in enumerate(counts):
                 ax1.text(count, i, f' {count}', va='center', fontsize=9)
@@ -387,7 +386,6 @@ class ErrorAnalyzer:
             ax2.set_xlabel('Count', fontsize=11, fontweight='bold')
             ax2.set_title('Top 15 False Negatives\n(Under-predicted/Missed)', fontsize=13, fontweight='bold')
             ax2.invert_yaxis()
-            ax2.grid(axis='x', alpha=0.3)
 
             for i, count in enumerate(counts):
                 ax2.text(count, i, f' {count}', va='center', fontsize=9)
