@@ -313,10 +313,10 @@ class ErrorAnalyzer:
                                 pred_idx = code_to_idx[pred_code]
                                 matrix[actual_idx, pred_idx] += 0.5
 
-        # Create visualization
+        # Create visualization (using colorblind-safe colormap)
         fig, ax = plt.subplots(figsize=(12, 10))
 
-        im = ax.imshow(matrix, cmap='Blues', aspect='auto')
+        im = ax.imshow(matrix, cmap=COLORS['sequential_cmap'], aspect='auto')
 
         ax.set_xticks(np.arange(len(top_codes)))
         ax.set_yticks(np.arange(len(top_codes)))

@@ -116,8 +116,8 @@ STRATEGY_INFO = {
         'order': 5
     },
     '6e_KeywordAugmented': {
-        'name': 'Keyword-Augmented',
-        'short_name': 'KA',
+        'name': 'Keyword-Extraction',
+        'short_name': 'KE',
         'description': 'With keyword extraction',
         'fine_tuned': True,
         'order': 6
@@ -509,10 +509,10 @@ class ResultsAggregator:
             if not s['fine_tuned']:
                 bars[i].set_hatch('///')
 
-        # Add F1 values on top of bars
+        # Add F1 values on top of bars (3 decimal places for journal)
         for i, (bar, f1_val) in enumerate(zip(bars, micro_f1_values)):
             ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.012,
-                    f'{f1_val:.4f}', ha='center', va='bottom', fontsize=10, fontweight='bold')
+                    f'{f1_val:.3f}', ha='center', va='bottom', fontsize=10, fontweight='bold')
 
         # Statistical significance annotations - draw manually for better control
         # Get fine-tuned strategies sorted by actual Micro F1 (descending)
@@ -687,10 +687,10 @@ class ResultsAggregator:
             if not s['fine_tuned']:
                 bars[i].set_hatch('///')
 
-        # Add F1 values on top of bars
+        # Add F1 values on top of bars (3 decimal places for journal)
         for i, (bar, f1_val) in enumerate(zip(bars, micro_f1_values)):
             ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.012,
-                    f'{f1_val:.4f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+                    f'{f1_val:.3f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
 
         # Add group labels at the bottom
         group_label_y = -0.22

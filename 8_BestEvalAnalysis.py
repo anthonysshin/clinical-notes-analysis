@@ -35,7 +35,10 @@ from datetime import datetime
 from typing import Dict
 import warnings
 
-from config import OUTPUT_DIR_8_BEST, OUTPUT_DIR, OUTPUT_DIR_6F
+from config import (
+    OUTPUT_DIR_8_BEST, OUTPUT_DIR, OUTPUT_DIR_6F,
+    COLORS, apply_figure_style
+)
 from collections import defaultdict
 
 warnings.filterwarnings('ignore')
@@ -68,10 +71,10 @@ def get_code_category(code):
     return 'Other'
 
 
-# Set plotting style
+# Apply publication-ready figure style from config
+apply_figure_style()
 sns.set_style("whitegrid")
 plt.rcParams['figure.figsize'] = (12, 8)
-plt.rcParams['font.size'] = 11
 
 
 class ResultsAnalyzer:
@@ -235,25 +238,25 @@ class ResultsAnalyzer:
         # Create figure with dual y-axis
         fig, ax1 = plt.subplots(figsize=(12, 6))
 
-        # Plot loss
-        color1 = '#2980b9'
+        # Plot loss (using colorblind-safe colors from config)
+        color_loss = COLORS['primary']  # Blue
         ax1.set_xlabel('Training Steps', fontsize=12, fontweight='bold')
-        ax1.set_ylabel('Training Loss', fontsize=12, fontweight='bold', color=color1)
-        ax1.plot(steps, losses, color=color1, linewidth=1.5, alpha=0.8, label='Training Loss')
-        ax1.tick_params(axis='y', labelcolor=color1)
+        ax1.set_ylabel('Training Loss', fontsize=12, fontweight='bold', color=color_loss)
+        ax1.plot(steps, losses, color=color_loss, linewidth=1.5, alpha=0.8, label='Training Loss')
+        ax1.tick_params(axis='y', labelcolor=color_loss)
         ax1.set_ylim(0, max(losses) * 1.1)
 
         # Add smoothed loss (moving average)
         window = 10
         smoothed_loss = pd.Series(losses).rolling(window=window, min_periods=1).mean()
-        ax1.plot(steps, smoothed_loss, color='#c0392b', linewidth=2, label=f'Smoothed (window={window})')
+        ax1.plot(steps, smoothed_loss, color=COLORS['negative'], linewidth=2, label=f'Smoothed (window={window})')
 
         # Plot learning rate on secondary axis
         ax2 = ax1.twinx()
-        color2 = '#27ae60'
-        ax2.set_ylabel('Learning Rate', fontsize=12, fontweight='bold', color=color2)
-        ax2.plot(steps, lrs, color=color2, linewidth=1.5, linestyle='--', alpha=0.7, label='Learning Rate')
-        ax2.tick_params(axis='y', labelcolor=color2)
+        color_lr = COLORS['tertiary']  # Bluish green
+        ax2.set_ylabel('Learning Rate', fontsize=12, fontweight='bold', color=color_lr)
+        ax2.plot(steps, lrs, color=color_lr, linewidth=1.5, linestyle='--', alpha=0.7, label='Learning Rate')
+        ax2.tick_params(axis='y', labelcolor=color_lr)
         ax2.set_ylim(0, max(lrs) * 1.1)
 
         # Add epoch markers
@@ -286,13 +289,13 @@ class ResultsAnalyzer:
 
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
 
-        # Histogram
-        ax1.hist(self.predictions_df['f1_score'], bins=20, color='#3498db',
+        # Histogram (using colorblind-safe colors from config)
+        ax1.hist(self.predictions_df['f1_score'], bins=20, color=COLORS['primary'],
                  alpha=0.7, edgecolor='black')
-        ax1.axvline(self.predictions_df['f1_score'].mean(), color='red',
+        ax1.axvline(self.predictions_df['f1_score'].mean(), color=COLORS['negative'],
                     linestyle='--', linewidth=2,
                     label=f"Mean: {self.predictions_df['f1_score'].mean():.3f}")
-        ax1.axvline(self.predictions_df['f1_score'].median(), color='green',
+        ax1.axvline(self.predictions_df['f1_score'].median(), color=COLORS['tertiary'],
                     linestyle='--', linewidth=2,
                     label=f"Median: {self.predictions_df['f1_score'].median():.3f}")
         ax1.set_xlabel('F1 Score', fontsize=11, fontweight='bold')
@@ -309,7 +312,7 @@ class ResultsAnalyzer:
 
         categories = ['Perfect Match\n(F1=1.0)', 'Partial Match\n(0<F1<1)', 'Complete Miss\n(F1=0)']
         counts = [perfect, partial, complete_miss]
-        colors = ['#2ecc71', '#f39c12', '#e74c3c']
+        colors = [COLORS['perfect_match'], COLORS['partial_match'], COLORS['complete_miss']]
 
         bars = ax2.bar(categories, counts, color=colors, alpha=0.8)
         ax2.set_ylabel('Number of Samples', fontsize=11, fontweight='bold')
@@ -336,11 +339,12 @@ class ResultsAnalyzer:
 
         fig, ax = plt.subplots(figsize=(12, 8))
 
+        # Use colorblind-safe colormap from config
         scatter = ax.scatter(
             self.per_code_df['occurrences'],
             self.per_code_df['f1_score'],
             c=self.per_code_df['f1_score'],
-            cmap='RdYlGn',
+            cmap=COLORS['sequential_cmap'],  # YlGnBu - colorblind-safe
             s=60,
             alpha=0.7,
             edgecolors='black',
@@ -387,7 +391,7 @@ class ResultsAnalyzer:
         # Get top 20 codes by occurrences (frequency)
         df_sorted = df.sort_values('occurrences', ascending=False).head(20)
 
-        # Create heatmap
+        # Create heatmap (using colorblind-safe colormap)
         fig, ax = plt.subplots(figsize=(10, 8))
 
         heatmap_data = df_sorted[['precision', 'recall', 'f1_score']].values
@@ -395,7 +399,7 @@ class ResultsAnalyzer:
         sns.heatmap(heatmap_data,
                     annot=True,
                     fmt='.2f',
-                    cmap='RdYlGn',
+                    cmap=COLORS['sequential_cmap'],  # YlGnBu - colorblind-safe
                     vmin=0, vmax=1,
                     xticklabels=['Precision', 'Recall', 'F1'],
                     yticklabels=[f"{row['f_code']} (n={int(row['occurrences'])})"
@@ -463,15 +467,15 @@ class ResultsAnalyzer:
             precisions.append(precision)
             recalls.append(recall)
 
-        # Create grouped bar chart
+        # Create grouped bar chart (using colorblind-safe colors from config)
         fig, ax = plt.subplots(figsize=(12, 6))
 
         x = np.arange(len(categories))
         width = 0.25
 
-        ax.bar(x - width, precisions, width, label='Precision', color='#3498db', alpha=0.8)
-        ax.bar(x, recalls, width, label='Recall', color='#e74c3c', alpha=0.8)
-        ax.bar(x + width, f1_scores, width, label='F1', color='#27ae60', alpha=0.8)
+        ax.bar(x - width, precisions, width, label='Precision', color=COLORS['precision'], alpha=0.8)
+        ax.bar(x, recalls, width, label='Recall', color=COLORS['recall'], alpha=0.8)
+        ax.bar(x + width, f1_scores, width, label='F1', color=COLORS['f1_score'], alpha=0.8)
 
         ax.set_xlabel('F-Code Category', fontsize=12, fontweight='bold')
         ax.set_ylabel('Score', fontsize=12, fontweight='bold')

@@ -302,65 +302,74 @@ VAL_SAMPLES = 200
 
 
 # =============================================================================
-# VISUALIZATION COLOR PALETTE
+# VISUALIZATION COLOR PALETTE (Professional Pastel)
 # =============================================================================
-# Professional pastel color palette for journal publication
-# - Colorblind-friendly (distinguishable in deuteranopia/protanopia)
-# - Prints well in grayscale (varying luminance)
+# Professional pastel color palette for top-tier journal publication
+# - Soft, muted tones preferred by Nature, Science, NEJM
+# - Distinct luminance values for grayscale printing
 # - Consistent across all figures
 
 # Strategy colors: Ordered by performance (base models in grey, fine-tuned in pastels)
 STRATEGY_COLORS = {
     # Base models (no fine-tuning) - Grey tones
     '6g1_BaseModel_ZeroShot': '#B0B0B0',  # Light grey
-    '6g2_BaseModel_CoT': '#808080',        # Medium grey
+    '6g2_BaseModel_CoT': '#888888',        # Medium grey
 
-    # Fine-tuned models - Pastel spectrum (ordered by typical performance)
-    '6a_ZeroShotBaseline': '#F4A5A5',      # Pastel red/coral
-    '6b_FewShotExemplar': '#F4C79A',       # Pastel orange/peach
-    '6c_RuleConstrained': '#F4E59A',       # Pastel yellow
-    '6d_ChainOfThought': '#A5C8E4',        # Pastel blue
-    '6e_KeywordAugmented': '#A5D6A5',      # Pastel green
-    '6f_KeywordAugmentedCoT': '#8BB8E8',   # Pastel sky blue (best)
+    # Fine-tuned models - Professional pastel spectrum
+    '6a_ZeroShotBaseline': '#E8A5A5',      # Pastel coral
+    '6b_FewShotExemplar': '#F5D5A0',       # Pastel gold
+    '6c_RuleConstrained': '#E8C5A5',       # Pastel peach
+    '6d_ChainOfThought': '#A5D5B8',        # Pastel sage green
+    '6e_KeywordAugmented': '#A5C8E8',      # Pastel sky blue
+    '6f_KeywordAugmentedCoT': '#7BAFD4',   # Pastel steel blue (best)
 }
 
 # General-purpose colors for other visualizations
 COLORS = {
     # Primary palette (pastel)
-    'primary': '#8BB8E8',      # Pastel blue
-    'secondary': '#A5D6A5',    # Pastel green
-    'tertiary': '#F4C79A',     # Pastel orange
-    'quaternary': '#C9A5D6',   # Pastel purple
+    'primary': '#7BAFD4',      # Pastel steel blue
+    'secondary': '#E8A5A5',    # Pastel coral
+    'tertiary': '#A5D5B8',     # Pastel sage green
+    'quaternary': '#C5A5D5',   # Pastel lavender
 
     # Semantic colors
-    'positive': '#A5D6A5',     # Pastel green - for improvements/gains
-    'negative': '#F4A5A5',     # Pastel red - for decreases/errors
-    'neutral': '#B0B0B0',      # Grey - for baseline/neutral
-    'highlight': '#F4E59A',    # Pastel yellow - for emphasis
+    'positive': '#A5D5B8',     # Pastel sage green
+    'negative': '#E8A5A5',     # Pastel coral
+    'neutral': '#B0B0B0',      # Grey
+    'highlight': '#F5D5A0',    # Pastel gold
 
     # Metrics colors (for multi-metric comparisons)
-    'precision': '#8BB8E8',    # Pastel blue
-    'recall': '#A5D6A5',       # Pastel green
-    'f1_score': '#C9A5D6',     # Pastel purple
-    'accuracy': '#F4C79A',     # Pastel orange
+    'precision': '#7BAFD4',    # Pastel steel blue
+    'recall': '#E8B07A',       # Pastel orange
+    'f1_score': '#A5D5B8',     # Pastel sage green
+    'accuracy': '#C5A5D5',     # Pastel lavender
 
     # Error analysis colors
-    'true_positive': '#A5D6A5',   # Pastel green
-    'false_positive': '#F4A5A5',  # Pastel red
-    'false_negative': '#F4C79A',  # Pastel orange
+    'true_positive': '#A5D5B8',   # Pastel sage green
+    'false_positive': '#E8A5A5',  # Pastel coral
+    'false_negative': '#E8C5A5',  # Pastel peach
     'true_negative': '#B0B0B0',   # Grey
 
+    # Prediction quality colors (for bar charts)
+    'perfect_match': '#A5D5B8',   # Pastel sage green
+    'partial_match': '#E8C5A5',   # Pastel peach
+    'complete_miss': '#E8A5A5',   # Pastel coral
+
     # Category colors for F-code groups
-    'F00-F09': '#8BB8E8',      # Organic disorders - blue
-    'F10-F19': '#F4A5A5',      # Substance use - red
-    'F20-F29': '#C9A5D6',      # Schizophrenia - purple
-    'F30-F39': '#A5D6A5',      # Mood disorders - green
-    'F40-F48': '#F4C79A',      # Anxiety/stress - orange
-    'F50-F59': '#F4E59A',      # Behavioral syndromes - yellow
-    'F60-F69': '#E8A5C9',      # Personality disorders - pink
-    'F70-F79': '#A5E8E4',      # Intellectual disabilities - teal
-    'F80-F89': '#D6C9A5',      # Developmental disorders - tan
-    'F90-F99': '#B8B8E8',      # Childhood disorders - lavender
+    'F00-F09': '#7BAFD4',      # Organic disorders - steel blue
+    'F10-F19': '#E8A5A5',      # Substance use - coral
+    'F20-F29': '#C5A5D5',      # Schizophrenia - lavender
+    'F30-F39': '#A5D5B8',      # Mood disorders - sage green
+    'F40-F48': '#E8C5A5',      # Anxiety/stress - peach
+    'F50-F59': '#F5D5A0',      # Behavioral syndromes - gold
+    'F60-F69': '#A5C8E8',      # Personality disorders - sky blue
+    'F70-F79': '#B0B0B0',      # Intellectual disabilities - grey
+    'F80-F89': '#D5C5A5',      # Developmental disorders - tan
+    'F90-F99': '#D5A5C5',      # Childhood disorders - pink
+
+    # Sequential colormap recommendation for heatmaps
+    'sequential_cmap': 'Blues',   # Professional blue gradient
+    'diverging_cmap': 'RdBu',     # Red-Blue diverging
 }
 
 # Figure style settings for publication
