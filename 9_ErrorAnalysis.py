@@ -275,13 +275,29 @@ class ErrorAnalyzer:
 
     def create_confusion_matrix(self, top_n: int = 10):
         """
-        Create confusion matrix for top N F-codes.
+        Create a multi-label prediction co-occurrence matrix for the top N F-codes.
+
+        In a multi-label classification setting, a traditional confusion matrix
+        is not strictly defined because each sample can have multiple true and
+        predicted labels without a one-to-one correspondence. Instead, this
+        method produces a co-occurrence matrix with the following semantics:
+
+        - Diagonal cell (i, i): Count of samples where code i was correctly
+          predicted (true positive).
+        - Off-diagonal cell (i, j), i != j: Count of samples where code i was
+          in the ground truth AND code j was a false positive (predicted but
+          not in the ground truth) in the same sample.
+
+        Off-diagonal cells do NOT represent pairwise misclassifications.
+        They reflect co-occurrence patterns between true labels and false
+        positives, providing clinically interpretable insight into which
+        codes the model tends to over-predict when a given condition is present.
 
         Args:
-            top_n: Number of top codes to include
+            top_n: Number of top codes (by frequency in ground truth) to include.
         """
         print("\n" + "=" * 70)
-        print("CREATING CONFUSION MATRIX")
+        print("CREATING PREDICTION CO-OCCURRENCE MATRIX")
         print("=" * 70)
 
         # Count code occurrences
@@ -291,27 +307,32 @@ class ErrorAnalyzer:
 
         top_codes = [code for code, _ in all_codes.most_common(top_n)]
 
-        # Build confusion matrix
-        matrix = np.zeros((len(top_codes), len(top_codes)))
+        # Build co-occurrence matrix
+        matrix = np.zeros((len(top_codes), len(top_codes)), dtype=int)
         code_to_idx = {code: i for i, code in enumerate(top_codes)}
 
         for result in self.sample_results:
             actual = set(result.get('actual_codes', []))
             predicted = set(result.get('predicted_codes', []))
 
+            # Identify false positives in this sample (predicted but not actual)
+            false_positives = predicted - actual
+
             for actual_code in actual:
                 if actual_code in code_to_idx:
                     actual_idx = code_to_idx[actual_code]
 
+                    # Diagonal: count true positives
                     if actual_code in predicted:
-                        # True positive
                         matrix[actual_idx, actual_idx] += 1
-                    else:
-                        # False negative - check if confused with another code
-                        for pred_code in predicted:
-                            if pred_code in code_to_idx:
-                                pred_idx = code_to_idx[pred_code]
-                                matrix[actual_idx, pred_idx] += 0.5
+
+                    # Off-diagonal: count co-occurring false positives
+                    # For every true label in this sample, record each false
+                    # positive that appeared alongside it in the predictions.
+                    for fp_code in false_positives:
+                        if fp_code in code_to_idx:
+                            fp_idx = code_to_idx[fp_code]
+                            matrix[actual_idx, fp_idx] += 1
 
         # Create visualization (using colorblind-safe colormap)
         fig, ax = plt.subplots(figsize=(12, 10))
@@ -328,12 +349,13 @@ class ErrorAnalyzer:
             for j in range(len(top_codes)):
                 if matrix[i, j] > 0:
                     text_color = 'white' if matrix[i, j] > matrix.max() / 2 else 'black'
-                    ax.text(j, i, f'{int(matrix[i, j])}',
+                    ax.text(j, i, f'{matrix[i, j]}',
                             ha='center', va='center', color=text_color, fontsize=9)
 
         ax.set_xlabel('Predicted', fontsize=12, fontweight='bold')
         ax.set_ylabel('Actual', fontsize=12, fontweight='bold')
-        ax.set_title(f'Confusion Matrix (Top {top_n} F-Codes)\nDiagonal = True Positives',
+        ax.set_title(f'Prediction Co-Occurrence Matrix (Top {top_n} F-Codes)\n'
+                     f'Diagonal = True Positives; Off-Diagonal = False-Positive Co-Occurrences',
                      fontsize=14, fontweight='bold', pad=20)
 
         cbar = plt.colorbar(im, ax=ax)
