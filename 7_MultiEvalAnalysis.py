@@ -216,6 +216,13 @@ class ResultsAggregator:
             eval_time_sec = metrics.get('evaluation_time_seconds', 0)
             eval_time_min = eval_time_sec / 60 if eval_time_sec else 0
 
+            # Compute macro-F1 over codes with at least one ground truth instance,
+            # excluding FP-only codes that would artificially deflate the average
+            per_code = metrics.get('per_code_metrics', {})
+            f1_with_occ = [v['f1'] for v in per_code.values()
+                           if v.get('occurrences', 0) > 0]
+            macro_f1_filtered = np.mean(f1_with_occ) if f1_with_occ else 0.0
+
             rows.append({
                 'Strategy': info.get('name', strategy_id),
                 'Short': info.get('short_name', strategy_id[:4]),
@@ -223,9 +230,7 @@ class ResultsAggregator:
                 'Micro P': metrics.get('micro_precision', 0),
                 'Micro R': metrics.get('micro_recall', 0),
                 'Micro F1': metrics.get('micro_f1', 0),
-                'Macro P': metrics.get('macro_precision', 0),
-                'Macro R': metrics.get('macro_recall', 0),
-                'Macro F1': metrics.get('macro_f1', 0),
+                'Macro F1': macro_f1_filtered,
                 'Perfect Match %': round(metrics.get('perfect_match_rate', 0) * 100, 1),
                 'Eval Time (min)': eval_time_min,
                 'Samples': metrics.get('total_samples', 0)
@@ -276,7 +281,7 @@ class ResultsAggregator:
         df = self.comparison_df.copy()
 
         # Format numbers
-        for col in ['Micro P', 'Micro R', 'Micro F1', 'Macro P', 'Macro R', 'Macro F1']:
+        for col in ['Micro P', 'Micro R', 'Micro F1', 'Macro F1']:
             df[col] = df[col].apply(lambda x: f"{x:.3f}")
         df['Perfect Match %'] = df['Perfect Match %'].apply(lambda x: f"{x:.1f}")
         df['Eval Time (min)'] = df['Eval Time (min)'].apply(lambda x: f"{x:.1f}")
@@ -322,7 +327,13 @@ class ResultsAggregator:
             f.write('\n'.join(latex_lines))
 
     def run_statistical_tests(self):
-        """Run paired t-test between top 2 strategies."""
+        """Run statistical comparison between top 2 strategies.
+
+        Tests performed:
+        - Paired t-test (parametric)
+        - Wilcoxon signed-rank test (nonparametric, no distributional assumptions)
+        - Cohen's d effect size (paired, using SD of differences)
+        """
         print("\n" + "=" * 70)
         print("STATISTICAL SIGNIFICANCE TEST")
         print("=" * 70)
@@ -355,7 +366,7 @@ class ResultsAggregator:
         print(f"  #1: {top1_name} (Sample-Avg F1 = {top1_mean:.4f})")
         print(f"  #2: {top2_name} (Sample-Avg F1 = {top2_mean:.4f})")
 
-        # Paired t-test between top 2
+        # Paired samples
         f1_1 = strategy_f1_scores[top1_id]
         f1_2 = strategy_f1_scores[top2_id]
 
@@ -364,22 +375,23 @@ class ResultsAggregator:
         f1_1 = f1_1[:min_len]
         f1_2 = f1_2[:min_len]
 
+        diff = f1_1 - f1_2
+
         # Paired t-test
-        t_stat, p_value = stats.ttest_rel(f1_1, f1_2)
+        t_stat, t_pvalue = stats.ttest_rel(f1_1, f1_2)
+
+        # Wilcoxon signed-rank test (nonparametric)
+        w_stat, w_pvalue = stats.wilcoxon(f1_1, f1_2)
 
         # Effect size (Cohen's d for paired samples)
-        diff = f1_1 - f1_2
-        cohens_d = np.mean(diff) / np.std(diff) if np.std(diff) > 0 else 0
+        cohens_d = np.mean(diff) / np.std(diff, ddof=1) if np.std(diff) > 0 else 0
 
         # Interpret significance
-        if p_value < 0.001:
-            sig_level = "highly significant (p < 0.001)"
-        elif p_value < 0.01:
-            sig_level = "very significant (p < 0.01)"
-        elif p_value < 0.05:
-            sig_level = "significant (p < 0.05)"
-        else:
-            sig_level = "NOT significant (p >= 0.05)"
+        def interpret_p(p):
+            if p < 0.001: return "highly significant (p < 0.001)"
+            elif p < 0.01: return "very significant (p < 0.01)"
+            elif p < 0.05: return "significant (p < 0.05)"
+            else: return "NOT significant (p >= 0.05)"
 
         # Interpret effect size
         if abs(cohens_d) < 0.2:
@@ -394,11 +406,18 @@ class ResultsAggregator:
         print(f"\nPaired t-test (#1 vs #2):")
         print("-" * 60)
         print(f"  t-statistic: {t_stat:.4f}")
-        print(f"  p-value: {p_value:.6f}")
-        print(f"  Result: {sig_level}")
+        print(f"  p-value: {t_pvalue:.6f}")
+        print(f"  Result: {interpret_p(t_pvalue)}")
+
+        print(f"\nWilcoxon signed-rank test (#1 vs #2):")
+        print("-" * 60)
+        print(f"  W-statistic: {w_stat:.1f}")
+        print(f"  p-value: {w_pvalue:.6f}")
+        print(f"  Result: {interpret_p(w_pvalue)}")
+
         print(f"\nEffect Size:")
         print(f"  Cohen's d: {cohens_d:.4f} ({effect_interp} effect)")
-        print(f"  Mean difference: {top1_mean - top2_mean:.4f}")
+        print(f"  Mean difference: {np.mean(diff):.4f}")
 
         # Store results for use in visualizations
         self.statistical_results = {
@@ -410,15 +429,22 @@ class ResultsAggregator:
             'top2_sample_avg_f1': float(top2_mean),
             'paired_ttest': {
                 't_statistic': float(t_stat),
-                'p_value': float(p_value),
-                'significant_0.05': bool(p_value < 0.05),
-                'significant_0.01': bool(p_value < 0.01),
-                'significant_0.001': bool(p_value < 0.001),
+                'p_value': float(t_pvalue),
+                'significant_0.05': bool(t_pvalue < 0.05),
+                'significant_0.01': bool(t_pvalue < 0.01),
+                'significant_0.001': bool(t_pvalue < 0.001),
+            },
+            'wilcoxon': {
+                'w_statistic': float(w_stat),
+                'p_value': float(w_pvalue),
+                'significant_0.05': bool(w_pvalue < 0.05),
+                'significant_0.01': bool(w_pvalue < 0.01),
+                'significant_0.001': bool(w_pvalue < 0.001),
             },
             'effect_size': {
                 'cohens_d': float(cohens_d),
                 'interpretation': effect_interp,
-                'mean_difference': float(top1_mean - top2_mean)
+                'mean_difference': float(np.mean(diff))
             }
         }
 
@@ -429,6 +455,160 @@ class ResultsAggregator:
         print(f"\nStatistical results saved: {stats_path}")
 
         return self.statistical_results
+
+    def run_bootstrap_cis(self, n_iterations: int = 1000):
+        """Compute bootstrap 95% CIs for all strategies and the paired difference.
+
+        For each strategy, resamples per-sample TP/FP/FN with replacement and
+        recomputes micro-F1, micro-precision, micro-recall, and exact match rate.
+        This correctly bootstraps micro-averaged metrics by aggregating counts
+        rather than averaging per-sample F1 scores.
+
+        Also computes a paired bootstrap CI for the micro-F1 difference between
+        the top two strategies (using the same resampled indices for both).
+
+        Args:
+            n_iterations: Number of bootstrap iterations (default 1000).
+        """
+        print("\n" + "=" * 70)
+        print(f"BOOTSTRAP CONFIDENCE INTERVALS ({n_iterations} iterations)")
+        print("=" * 70)
+
+        rng = np.random.RandomState(RANDOM_SEED)
+
+        # --- Per-strategy CIs ---
+        bootstrap_results = {}
+        for strategy_id, results in self.strategy_results.items():
+            samples = results.get('sample_results', [])
+            if not samples:
+                continue
+
+            tp = np.array([s['tp'] for s in samples])
+            fp = np.array([s['fp'] for s in samples])
+            fn = np.array([s['fn'] for s in samples])
+            pm = np.array([s['perfect_match'] for s in samples], dtype=float)
+            n = len(samples)
+
+            boot_micro_f1 = np.empty(n_iterations)
+            boot_micro_p = np.empty(n_iterations)
+            boot_micro_r = np.empty(n_iterations)
+            boot_exact = np.empty(n_iterations)
+
+            for i in range(n_iterations):
+                idx = rng.choice(n, size=n, replace=True)
+                b_tp = np.sum(tp[idx])
+                b_fp = np.sum(fp[idx])
+                b_fn = np.sum(fn[idx])
+
+                b_p = b_tp / (b_tp + b_fp) if (b_tp + b_fp) > 0 else 0.0
+                b_r = b_tp / (b_tp + b_fn) if (b_tp + b_fn) > 0 else 0.0
+                b_f1 = 2 * b_p * b_r / (b_p + b_r) if (b_p + b_r) > 0 else 0.0
+
+                boot_micro_f1[i] = b_f1
+                boot_micro_p[i] = b_p
+                boot_micro_r[i] = b_r
+                boot_exact[i] = np.mean(pm[idx])
+
+            info = STRATEGY_INFO.get(strategy_id, {})
+            name = info.get('name', strategy_id)
+            metrics = results.get('performance_metrics', {})
+
+            ci = {
+                'micro_f1': {
+                    'point': float(metrics.get('micro_f1', 0)),
+                    'ci_lower': float(np.percentile(boot_micro_f1, 2.5)),
+                    'ci_upper': float(np.percentile(boot_micro_f1, 97.5)),
+                },
+                'micro_precision': {
+                    'point': float(metrics.get('micro_precision', 0)),
+                    'ci_lower': float(np.percentile(boot_micro_p, 2.5)),
+                    'ci_upper': float(np.percentile(boot_micro_p, 97.5)),
+                },
+                'micro_recall': {
+                    'point': float(metrics.get('micro_recall', 0)),
+                    'ci_lower': float(np.percentile(boot_micro_r, 2.5)),
+                    'ci_upper': float(np.percentile(boot_micro_r, 97.5)),
+                },
+                'exact_match': {
+                    'point': float(metrics.get('perfect_match_rate', 0)),
+                    'ci_lower': float(np.percentile(boot_exact, 2.5)),
+                    'ci_upper': float(np.percentile(boot_exact, 97.5)),
+                },
+            }
+            bootstrap_results[strategy_id] = ci
+
+            print(f"\n  {name}:")
+            print(f"    Micro F1:  {ci['micro_f1']['point']:.3f} "
+                  f"({ci['micro_f1']['ci_lower']:.3f}-{ci['micro_f1']['ci_upper']:.3f})")
+            print(f"    Precision: {ci['micro_precision']['point']:.3f} "
+                  f"({ci['micro_precision']['ci_lower']:.3f}-{ci['micro_precision']['ci_upper']:.3f})")
+            print(f"    Recall:    {ci['micro_recall']['point']:.3f} "
+                  f"({ci['micro_recall']['ci_lower']:.3f}-{ci['micro_recall']['ci_upper']:.3f})")
+            print(f"    Exact:     {ci['exact_match']['point']:.1%} "
+                  f"({ci['exact_match']['ci_lower']:.1%}-{ci['exact_match']['ci_upper']:.1%})")
+
+        # --- Paired bootstrap for top 2 strategies ---
+        paired_diff = None
+        if self.statistical_results:
+            top1_id = self.statistical_results['top1_strategy']
+            top2_id = self.statistical_results['top2_strategy']
+
+            s1 = self.strategy_results[top1_id]['sample_results']
+            s2 = self.strategy_results[top2_id]['sample_results']
+
+            tp1 = np.array([s['tp'] for s in s1])
+            fp1 = np.array([s['fp'] for s in s1])
+            fn1 = np.array([s['fn'] for s in s1])
+            tp2 = np.array([s['tp'] for s in s2])
+            fp2 = np.array([s['fp'] for s in s2])
+            fn2 = np.array([s['fn'] for s in s2])
+            n = min(len(s1), len(s2))
+
+            boot_diff = np.empty(n_iterations)
+            for i in range(n_iterations):
+                idx = rng.choice(n, size=n, replace=True)
+
+                b_tp1, b_fp1, b_fn1 = np.sum(tp1[idx]), np.sum(fp1[idx]), np.sum(fn1[idx])
+                b_tp2, b_fp2, b_fn2 = np.sum(tp2[idx]), np.sum(fp2[idx]), np.sum(fn2[idx])
+
+                denom1 = 2 * b_tp1 + b_fp1 + b_fn1
+                denom2 = 2 * b_tp2 + b_fp2 + b_fn2
+                f1_1 = 2 * b_tp1 / denom1 if denom1 > 0 else 0.0
+                f1_2 = 2 * b_tp2 / denom2 if denom2 > 0 else 0.0
+                boot_diff[i] = f1_1 - f1_2
+
+            top1_name = self.statistical_results['top1_name']
+            top2_name = self.statistical_results['top2_name']
+            point_diff = bootstrap_results[top1_id]['micro_f1']['point'] - \
+                         bootstrap_results[top2_id]['micro_f1']['point']
+
+            paired_diff = {
+                'strategy_1': top1_name,
+                'strategy_2': top2_name,
+                'point_difference': float(point_diff),
+                'mean_boot_difference': float(np.mean(boot_diff)),
+                'ci_lower': float(np.percentile(boot_diff, 2.5)),
+                'ci_upper': float(np.percentile(boot_diff, 97.5)),
+            }
+
+            print(f"\n  Paired Difference ({top1_name} - {top2_name}):")
+            print(f"    Point diff:    {point_diff:.4f}")
+            print(f"    Bootstrap mean: {np.mean(boot_diff):.4f}")
+            print(f"    95% CI:        ({paired_diff['ci_lower']:.4f}-{paired_diff['ci_upper']:.4f})")
+
+        # Save
+        output = {
+            'n_iterations': n_iterations,
+            'random_seed': RANDOM_SEED,
+            'per_strategy': bootstrap_results,
+        }
+        if paired_diff:
+            output['paired_difference'] = paired_diff
+
+        ci_path = self.output_dir / 'bootstrap_cis.json'
+        with open(ci_path, 'w') as f:
+            json.dump(output, f, indent=2)
+        print(f"\n  Saved: {ci_path}")
 
     def create_visualizations(self):
         """Create publication-ready visualizations."""
@@ -678,18 +858,47 @@ class ResultsAggregator:
             current_x += 1
         x_pos = np.array(x_pos)
 
-        # Create bars
+        # Load bootstrap CIs if available
+        ci_path = self.output_dir / 'bootstrap_cis.json'
+        boot_cis = {}
+        if ci_path.exists():
+            with open(ci_path) as f:
+                boot_data = json.load(f)
+            boot_cis = boot_data.get('per_strategy', {})
+
+        # Build CI error arrays (asymmetric: lower error, upper error)
+        ci_lower_err = []
+        ci_upper_err = []
+        ci_upper_vals = []
+        for s in strategy_data:
+            sid = s['strategy_id']
+            if sid in boot_cis:
+                ci_lo = boot_cis[sid]['micro_f1']['ci_lower']
+                ci_hi = boot_cis[sid]['micro_f1']['ci_upper']
+                ci_lower_err.append(s['micro_f1'] - ci_lo)
+                ci_upper_err.append(ci_hi - s['micro_f1'])
+                ci_upper_vals.append(ci_hi)
+            else:
+                ci_lower_err.append(0)
+                ci_upper_err.append(0)
+                ci_upper_vals.append(s['micro_f1'])
+
+        # Create bars with CI error bars
         bars = ax.bar(x_pos, micro_f1_values, color=colors,
-                      edgecolor='black', linewidth=0.8, width=0.8)
+                      edgecolor='black', linewidth=0.8, width=0.8,
+                      yerr=[ci_lower_err, ci_upper_err],
+                      error_kw={'capsize': 4, 'capthick': 1.2, 'elinewidth': 1.2,
+                                'color': 'black'})
 
         # Add hatch pattern to base model bars
         for i, s in enumerate(strategy_data):
             if not s['fine_tuned']:
                 bars[i].set_hatch('///')
 
-        # Add F1 values on top of bars (3 decimal places for journal)
+        # Add F1 values above CI whisker caps
         for i, (bar, f1_val) in enumerate(zip(bars, micro_f1_values)):
-            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.012,
+            label_y = ci_upper_vals[i] + 0.008
+            ax.text(bar.get_x() + bar.get_width()/2, label_y,
                     f'{f1_val:.3f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
 
         # Add group labels at the bottom
@@ -717,14 +926,16 @@ class ResultsAggregator:
             idx2 = get_bar_index(all_sorted[1]['strategy_id'])
             if idx1 >= 0 and idx2 >= 0:
                 x1, x2 = x_pos[min(idx1, idx2)], x_pos[max(idx1, idx2)]
-                y_bracket = max_f1 + 0.05  # Slightly above F1 value
+                # Place bracket above the highest CI whisker + F1 label
+                max_ci_upper = max(ci_upper_vals[idx1], ci_upper_vals[idx2])
+                y_bracket = max_ci_upper + 0.06  # Clear whisker caps and F1 labels
 
                 ax.plot([x1, x1, x2, x2], [y_bracket - 0.01, y_bracket, y_bracket, y_bracket - 0.01],
                         color='black', linewidth=1.2)
 
-                # Get significance annotation
+                # Get significance annotation (using Wilcoxon signed-rank test)
                 if hasattr(self, 'statistical_results') and self.statistical_results:
-                    p_val = self.statistical_results.get('paired_ttest', {}).get('p_value', 1.0)
+                    p_val = self.statistical_results.get('wilcoxon', {}).get('p_value', 1.0)
                     if p_val < 0.001:
                         sig_label = '***'
                     elif p_val < 0.01:
@@ -876,6 +1087,7 @@ class ResultsAggregator:
 
         self.create_comparison_table()
         self.run_statistical_tests()
+        self.run_bootstrap_cis()
         self.create_visualizations()
         self.create_summary_report()
 

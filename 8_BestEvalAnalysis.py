@@ -36,9 +36,9 @@ import warnings
 
 from config import (
     OUTPUT_DIR_8_BEST, OUTPUT_DIR, OUTPUT_DIR_6F,
-    COLORS, apply_figure_style
+    COLORS, apply_figure_style, TRAIN_DATA_PATH
 )
-from collections import defaultdict
+from collections import defaultdict, Counter
 
 warnings.filterwarnings('ignore')
 
@@ -192,6 +192,93 @@ class ResultsAnalyzer:
         analysis_path = self.output_dir / 'per_code_analysis.csv'
         df.to_csv(analysis_path, index=False)
         print(f"\nPer-code analysis saved: {analysis_path}")
+
+        self._analyze_per_code_quartiles(df)
+
+    def _analyze_per_code_quartiles(self, df: pd.DataFrame):
+        """Compute per-code F1 quartiles stratified by training frequency tier.
+
+        Computes overall and tier-stratified summary statistics for per-code F1,
+        restricted to codes with at least one true instance in the test set
+        (following Edin et al. 2023 corrected methodology). Tiers are defined
+        by training set frequency: frequent (top 25%), moderate (middle 50%),
+        rare (bottom 25%).
+        """
+        print("\n" + "-" * 70)
+        print("PER-CODE F1 DISTRIBUTION BY FREQUENCY TIER")
+        print("-" * 70)
+
+        # Load training frequencies
+        train_df = pd.read_csv(TRAIN_DATA_PATH)
+        train_freq = Counter()
+        for codes_str in train_df['f_codes_str'].dropna():
+            for code in codes_str.split():
+                train_freq[code.strip(',')] += 1
+
+        # Filter to codes with test occurrences > 0
+        df_filtered = df[df['occurrences'] > 0].copy()
+        df_filtered['train_freq'] = df_filtered['f_code'].map(
+            lambda c: train_freq.get(c, 0))
+
+        f1_vals = df_filtered['f1_score'].values
+        n_codes = len(f1_vals)
+
+        # Overall statistics
+        overall = {
+            'n_codes': n_codes,
+            'codes_with_f1_zero': int((f1_vals == 0).sum()),
+            'min': float(np.min(f1_vals)),
+            'q1': float(np.percentile(f1_vals, 25)),
+            'median': float(np.median(f1_vals)),
+            'q3': float(np.percentile(f1_vals, 75)),
+            'max': float(np.max(f1_vals)),
+            'mean': float(np.mean(f1_vals)),
+        }
+        print(f"\nOverall (n={n_codes} codes with test occurrences):")
+        print(f"  Min={overall['min']:.4f}  Q1={overall['q1']:.4f}  "
+              f"Median={overall['median']:.4f}  Q3={overall['q3']:.4f}  "
+              f"Max={overall['max']:.4f}  (F1=0: {overall['codes_with_f1_zero']})")
+
+        # Stratify by training frequency tier
+        df_sorted = df_filtered.sort_values('train_freq', ascending=False)
+        q25_idx = int(n_codes * 0.25)
+        q75_idx = int(n_codes * 0.75)
+
+        tiers = {
+            'frequent': df_sorted.iloc[:q25_idx],
+            'moderate': df_sorted.iloc[q25_idx:q75_idx],
+            'rare': df_sorted.iloc[q75_idx:],
+        }
+        tier_labels = {
+            'frequent': 'Frequent (top 25%)',
+            'moderate': 'Moderate (middle 50%)',
+            'rare': 'Rare (bottom 25%)',
+        }
+
+        tier_stats = {}
+        for tier_name, tier_df in tiers.items():
+            vals = tier_df['f1_score'].values
+            stats = {
+                'n_codes': len(tier_df),
+                'train_freq_range': f"{int(tier_df['train_freq'].min())}-{int(tier_df['train_freq'].max())}",
+                'min': float(np.min(vals)),
+                'q1': float(np.percentile(vals, 25)),
+                'median': float(np.median(vals)),
+                'q3': float(np.percentile(vals, 75)),
+                'max': float(np.max(vals)),
+            }
+            tier_stats[tier_name] = stats
+            print(f"\n  {tier_labels[tier_name]} (n={stats['n_codes']}, "
+                  f"train freq {stats['train_freq_range']}):")
+            print(f"    Median F1={stats['median']:.4f}  "
+                  f"IQR=[{stats['q1']:.4f}-{stats['q3']:.4f}]")
+
+        # Save results
+        quartile_results = {'overall': overall, 'tiers': tier_stats}
+        quartile_path = self.output_dir / 'per_code_f1_quartiles.json'
+        with open(quartile_path, 'w') as f:
+            json.dump(quartile_results, f, indent=2)
+        print(f"\n  Saved: {quartile_path.name}")
 
     def create_visualizations(self):
         """Create all analysis visualizations."""
