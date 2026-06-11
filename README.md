@@ -348,15 +348,6 @@ python -c "import torch; print(torch.cuda.get_device_name(0))"
 
 External validation was performed on proprietary clinical data from the University of Illinois Chicago (UIC). Validation scripts are available upon reasonable request to the corresponding author.
 
-## Citation
-
-```bibtex
-@article{mental_health_coding_2026,
-  title={Psychiatric ICD-10 F-Code Prediction from Clinical Notes: Fine-Tuning Open-Weight Large Language Models with Chain-of-Thought System Prompt Training},
-  author={[Sang Houn Shin,Lokesh Boggavarapu,Wen-xin Zhou,John Zulueta,Yingda Lu,Runa Bhaumik]},
-  year={2026}
-}
-```
 
 ## License
 
