@@ -351,10 +351,10 @@ External validation was performed on proprietary clinical data from the Universi
 ## Citation
 
 ```bibtex
-@article{mental_health_coding_2025,
-  title={Automated ICD-10 Mental Health Diagnosis Coding from Clinical Notes using Domain-Adapted Large Language Models},
-  author={[Authors]},
-  year={2025}
+@article{mental_health_coding_2026,
+  title={Psychiatric ICD-10 F-Code Prediction from Clinical Notes: Fine-Tuning Open-Weight Large Language Models with Chain-of-Thought System Prompt Training},
+  author={[Sang Houn Shin,Lokesh Boggavarapu,Wen-xin Zhou,John Zulueta,Yingda Lu,Runa Bhaumik]},
+  year={2026}
 }
 ```
 
