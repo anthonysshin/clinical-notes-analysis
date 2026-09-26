@@ -326,6 +326,39 @@ class ResultsAggregator:
         with open(path, 'w') as f:
             f.write('\n'.join(latex_lines))
 
+    def load_corrected_pairwise_pvalue(self, name_a: str, name_b: str) -> Optional[dict]:
+        """Look up the Holm-Bonferroni-corrected significance test for a pair
+        of strategies from 13_PairwiseStatisticalComparison.py's output.
+
+        That script runs a paired permutation test directly on the micro-F1
+        difference (the effect actually reported for each strategy, e.g. in
+        Table 2), with a Holm-Bonferroni correction across all 15 pairs among
+        the 6 evaluated strategies. This is used in place of the Wilcoxon
+        signed-rank test on per-sample F1 scores below for any figure
+        significance annotation, since the Wilcoxon test targets a different,
+        related quantity (Reviewer 2, Comment 7) and does not account for
+        testing multiple pairs at once (Reviewer 1, Comment 3).
+        """
+        csv_path = Path('outputs/13_PairwiseStatisticalComparison/pairwise_comparison.csv')
+        if not csv_path.exists():
+            print(f"  Note: {csv_path} not found; run 13_PairwiseStatisticalComparison.py "
+                  "first to get a Holm-Bonferroni-corrected p-value for figure annotations.")
+            return None
+        df = pd.read_csv(csv_path)
+        match = df[
+            ((df.strategy_a == name_a) & (df.strategy_b == name_b))
+            | ((df.strategy_a == name_b) & (df.strategy_b == name_a))
+        ]
+        if match.empty:
+            print(f"  Note: no pairwise result found for {name_a!r} vs {name_b!r} in {csv_path}")
+            return None
+        row = match.iloc[0]
+        return {
+            'p_holm': float(row['p_holm']),
+            'significant': bool(row['significant_after_correction']),
+            'source': str(csv_path),
+        }
+
     def run_statistical_tests(self):
         """Run statistical comparison between top 2 strategies.
 
@@ -333,6 +366,13 @@ class ResultsAggregator:
         - Paired t-test (parametric)
         - Wilcoxon signed-rank test (nonparametric, no distributional assumptions)
         - Cohen's d effect size (paired, using SD of differences)
+
+        Note: the Wilcoxon test above compares per-sample F1 scores, a related
+        but different quantity from the aggregate micro-F1 difference reported
+        elsewhere (Reviewer 2, Comment 7). It is retained here for reference,
+        but any figure significance annotation uses the Holm-Bonferroni
+        corrected, micro-F1-matched result from load_corrected_pairwise_pvalue()
+        instead (see run_bootstrap_cis / plotting code below).
         """
         print("\n" + "=" * 70)
         print("STATISTICAL SIGNIFICANCE TEST")
@@ -419,6 +459,16 @@ class ResultsAggregator:
         print(f"  Cohen's d: {cohens_d:.4f} ({effect_interp} effect)")
         print(f"  Mean difference: {np.mean(diff):.4f}")
 
+        # Holm-Bonferroni-corrected, micro-F1-matched test (used for figure
+        # annotations instead of the Wilcoxon test above -- see docstring).
+        corrected = self.load_corrected_pairwise_pvalue(top1_name, top2_name)
+        if corrected:
+            print(f"\nHolm-Bonferroni-corrected permutation test ({top1_name} vs {top2_name}):")
+            print("-" * 60)
+            print(f"  p_holm: {corrected['p_holm']:.4f}")
+            print(f"  Result: {'significant' if corrected['significant'] else 'NOT significant'} "
+                  f"at alpha=0.05 after correction across 15 pairwise comparisons")
+
         # Store results for use in visualizations
         self.statistical_results = {
             'top1_strategy': top1_id,
@@ -445,7 +495,8 @@ class ResultsAggregator:
                 'cohens_d': float(cohens_d),
                 'interpretation': effect_interp,
                 'mean_difference': float(np.mean(diff))
-            }
+            },
+            'corrected_pairwise': corrected,
         }
 
         # Save results to file
@@ -933,9 +984,15 @@ class ResultsAggregator:
                 ax.plot([x1, x1, x2, x2], [y_bracket - 0.01, y_bracket, y_bracket, y_bracket - 0.01],
                         color='black', linewidth=1.2)
 
-                # Get significance annotation (using Wilcoxon signed-rank test)
+                # Significance annotation: Holm-Bonferroni-corrected permutation test on
+                # the micro-F1 difference (13_PairwiseStatisticalComparison.py), matching
+                # the effect actually reported in Table 2 -- not the Wilcoxon signed-rank
+                # test on per-sample F1 scores (Reviewer 1 Comment 3 / Reviewer 2 Comment 7).
+                corrected = None
                 if hasattr(self, 'statistical_results') and self.statistical_results:
-                    p_val = self.statistical_results.get('wilcoxon', {}).get('p_value', 1.0)
+                    corrected = self.statistical_results.get('corrected_pairwise')
+                if corrected:
+                    p_val = corrected['p_holm']
                     if p_val < 0.001:
                         sig_label = '***'
                     elif p_val < 0.01:
@@ -945,7 +1002,8 @@ class ResultsAggregator:
                     else:
                         sig_label = 'ns'
                 else:
-                    sig_label = '*'  # Default based on known result
+                    sig_label = '*'  # Default based on known result; run
+                    # 13_PairwiseStatisticalComparison.py first for the corrected value
                 ax.text((x1 + x2) / 2, y_bracket + 0.008, sig_label, ha='center', va='bottom',
                         fontsize=11, fontweight='bold')
 
