@@ -174,6 +174,7 @@ OUTPUT_DIR_6G2 = os.path.join(OUTPUT_DIR, '6g2_BaseModel_CoT')
 OUTPUT_DIR_7_MULTI = os.path.join(OUTPUT_DIR, '7_MultiEvalAnalysis')
 OUTPUT_DIR_8_BEST = os.path.join(OUTPUT_DIR, '8_BestEvalAnalysis')
 OUTPUT_DIR_9_ERROR = os.path.join(OUTPUT_DIR, '9_ErrorAnalysis')
+OUTPUT_DIR_12_PATIENT_OVERLAP = os.path.join(OUTPUT_DIR, '12_PatientOverlapAnalysis')
 
 # Legacy aliases for backward compatibility (will be removed in future)
 EVAL_OUTPUT_DIR_6A = OUTPUT_DIR_6A
