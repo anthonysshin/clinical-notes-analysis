@@ -8,8 +8,11 @@ into a unified comparison with publication-ready visualizations and statistical 
 Analyses Performed:
     1. Results aggregation from all strategies into comparison tables
     2. Publication-ready figures (bar charts, radar plots, heatmaps)
-    3. Statistical significance test: Paired t-test between top 2 strategies
-    4. Effect size calculation (Cohen's d)
+    3. Pairwise statistical comparison across all 6 fine-tuned strategies: a
+       paired permutation test on the micro-F1 difference (matching the
+       aggregate effect actually reported, e.g. in Table 2) for every one of
+       the 15 pairs, with a Holm-Bonferroni correction across all 15 tests
+       (Reviewer 1, Comment 3; Reviewer 2, Comment 7)
 
 Output:
     - Comparison tables (CSV, LaTeX)
@@ -30,12 +33,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import argparse
+from itertools import combinations
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional
 from collections import defaultdict
 import warnings
-from scipy import stats
 
 # Import centralized config for reproducibility and visualization
 from config import (
@@ -130,6 +133,87 @@ STRATEGY_INFO = {
         'order': 7
     }
 }
+
+
+# =============================================================================
+# Pairwise statistical comparison (Reviewer 1, Comment 3; Reviewer 2, Comment 7)
+#
+# A paired permutation test on the micro-F1 difference, run for every pair
+# among the fine-tuned strategies, with a Holm-Bonferroni correction across
+# all pairs. This replaces a Wilcoxon signed-rank test on per-sample F1
+# scores, which tests a related but different quantity: it treats every test
+# case as one equally-weighted "vote" regardless of how many diagnosis codes
+# it carries, whereas the aggregate micro-F1 we report pools codes across all
+# cases. The two can disagree when the difference is concentrated in
+# multi-code cases. A permutation test on the pooled micro-F1 difference
+# tests exactly the effect we report, with no such mismatch, while remaining
+# nonparametric like the Wilcoxon test it replaces.
+# =============================================================================
+
+def compute_micro_f1(tp, fp, fn):
+    p = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    r = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    return (2 * p * r / (p + r) if (p + r) > 0 else 0.0), p, r
+
+
+def paired_bootstrap_ci(tpA, fpA, fnA, tpB, fpB, fnB, n_iter=2000, seed=RANDOM_SEED):
+    """95% CI for micro-F1(A) - micro-F1(B), resampling the SAME paired
+    indices for both strategies each iteration (they share the same test
+    cases)."""
+    rng = np.random.default_rng(seed)
+    n = len(tpA)
+    diffs = np.empty(n_iter)
+    for i in range(n_iter):
+        idx = rng.integers(0, n, n)
+        f1a, _, _ = compute_micro_f1(tpA[idx].sum(), fpA[idx].sum(), fnA[idx].sum())
+        f1b, _, _ = compute_micro_f1(tpB[idx].sum(), fpB[idx].sum(), fnB[idx].sum())
+        diffs[i] = f1a - f1b
+    return np.percentile(diffs, [2.5, 97.5])
+
+
+def paired_permutation_pvalue(tpA, fpA, fnA, tpB, fpB, fnB, observed_diff,
+                               n_iter=10000, seed=RANDOM_SEED):
+    """Two-sided paired permutation test on the micro-F1 difference.
+
+    Null hypothesis: for each test case, strategy A's and strategy B's
+    (tp, fp, fn) outcome are exchangeable (which strategy produced which
+    outcome is arbitrary). Under this null, randomly swap the A/B label
+    per case and recompute the micro-F1 difference many times to build a
+    null distribution, then see how extreme the real (unswapped)
+    difference is by comparison.
+    """
+    rng = np.random.default_rng(seed)
+    n = len(tpA)
+    null_diffs = np.empty(n_iter)
+    for i in range(n_iter):
+        swap = rng.integers(0, 2, n).astype(bool)
+        tp1 = np.where(swap, tpB, tpA)
+        fp1 = np.where(swap, fpB, fpA)
+        fn1 = np.where(swap, fnB, fnA)
+        tp2 = np.where(swap, tpA, tpB)
+        fp2 = np.where(swap, fpA, fpB)
+        fn2 = np.where(swap, fnA, fnB)
+        f1a, _, _ = compute_micro_f1(tp1.sum(), fp1.sum(), fn1.sum())
+        f1b, _, _ = compute_micro_f1(tp2.sum(), fp2.sum(), fn2.sum())
+        null_diffs[i] = f1a - f1b
+    return (np.sum(np.abs(null_diffs) >= abs(observed_diff)) + 1) / (n_iter + 1)
+
+
+def holm_bonferroni(p_values):
+    """Holm-Bonferroni step-down correction. Returns adjusted p-values in the
+    original order. More powerful than plain Bonferroni while controlling the
+    same family-wise error rate (the chance of at least one false positive
+    across all tests)."""
+    p_values = np.asarray(p_values)
+    m = len(p_values)
+    order = np.argsort(p_values)
+    adjusted = np.empty(m)
+    running_max = 0.0
+    for rank, idx in enumerate(order):
+        adj = (m - rank) * p_values[idx]
+        running_max = max(running_max, adj)
+        adjusted[idx] = min(running_max, 1.0)
+    return adjusted
 
 
 class ResultsAggregator:
@@ -326,180 +410,147 @@ class ResultsAggregator:
         with open(path, 'w') as f:
             f.write('\n'.join(latex_lines))
 
-    def load_corrected_pairwise_pvalue(self, name_a: str, name_b: str) -> Optional[dict]:
-        """Look up the Holm-Bonferroni-corrected significance test for a pair
-        of strategies from 13_PairwiseStatisticalComparison.py's output.
-
-        That script runs a paired permutation test directly on the micro-F1
-        difference (the effect actually reported for each strategy, e.g. in
-        Table 2), with a Holm-Bonferroni correction across all 15 pairs among
-        the 6 evaluated strategies. This is used in place of the Wilcoxon
-        signed-rank test on per-sample F1 scores below for any figure
-        significance annotation, since the Wilcoxon test targets a different,
-        related quantity (Reviewer 2, Comment 7) and does not account for
-        testing multiple pairs at once (Reviewer 1, Comment 3).
-        """
-        csv_path = Path('outputs/13_PairwiseStatisticalComparison/pairwise_comparison.csv')
-        if not csv_path.exists():
-            print(f"  Note: {csv_path} not found; run 13_PairwiseStatisticalComparison.py "
-                  "first to get a Holm-Bonferroni-corrected p-value for figure annotations.")
-            return None
-        df = pd.read_csv(csv_path)
-        match = df[
-            ((df.strategy_a == name_a) & (df.strategy_b == name_b))
-            | ((df.strategy_a == name_b) & (df.strategy_b == name_a))
-        ]
-        if match.empty:
-            print(f"  Note: no pairwise result found for {name_a!r} vs {name_b!r} in {csv_path}")
-            return None
-        row = match.iloc[0]
-        return {
-            'p_holm': float(row['p_holm']),
-            'significant': bool(row['significant_after_correction']),
-            'source': str(csv_path),
-        }
-
     def run_statistical_tests(self):
-        """Run statistical comparison between top 2 strategies.
+        """Pairwise statistical comparison across all fine-tuned strategies.
 
-        Tests performed:
-        - Paired t-test (parametric)
-        - Wilcoxon signed-rank test (nonparametric, no distributional assumptions)
-        - Cohen's d effect size (paired, using SD of differences)
+        For every pair among the 6 fine-tuned strategies (15 pairs total),
+        runs a paired permutation test directly on the micro-F1 difference
+        (the aggregate effect actually reported, e.g. in Table 2), with a
+        matching paired bootstrap CI, then applies a Holm-Bonferroni
+        correction across all 15 tests.
 
-        Note: the Wilcoxon test above compares per-sample F1 scores, a related
-        but different quantity from the aggregate micro-F1 difference reported
-        elsewhere (Reviewer 2, Comment 7). It is retained here for reference,
-        but any figure significance annotation uses the Holm-Bonferroni
-        corrected, micro-F1-matched result from load_corrected_pairwise_pvalue()
-        instead (see run_bootstrap_cis / plotting code below).
+        This replaces a Wilcoxon signed-rank test on per-sample F1 scores
+        that was previously run for only the top 2 strategies (Reviewer 1,
+        Comment 3: several claimed pairwise differences, including the
+        "distinct upper tier" claim, were never formally tested, and 15
+        pairs tested at once need a multiple-comparison correction).
+        The Wilcoxon test also targeted per-sample F1, a related but
+        different quantity from the aggregate micro-F1 difference we report
+        (Reviewer 2, Comment 7): it treats every test case as one equally
+        weighted "vote" regardless of how many diagnosis codes it carries,
+        while the aggregate micro-F1 pools codes across all cases, so the
+        two can disagree when the difference is concentrated in
+        multi-code cases. The permutation test below tests exactly the
+        effect we report.
         """
         print("\n" + "=" * 70)
-        print("STATISTICAL SIGNIFICANCE TEST")
+        print("PAIRWISE STATISTICAL COMPARISON (Holm-Bonferroni corrected)")
         print("=" * 70)
 
-        if len(self.strategy_predictions) < 2:
-            print("\nInsufficient data for statistical tests (need at least 2 strategies with predictions)")
+        # Fine-tuned-model strategies only; base-model conditions (6g1/6g2)
+        # are a separate comparison, not part of the "distinct upper tier"
+        # claim under review here.
+        fine_tuned_ids = [
+            sid for sid in STRATEGY_INFO
+            if STRATEGY_INFO[sid]['fine_tuned'] and sid in self.strategy_predictions
+        ]
+        fine_tuned_ids.sort(key=lambda sid: STRATEGY_INFO[sid]['order'])
+
+        if len(fine_tuned_ids) < 2:
+            print("\nInsufficient data for pairwise tests (need at least 2 fine-tuned "
+                  "strategies with predictions)")
+            self.statistical_results = {}
             return {}
 
-        # Get sample-level F1 scores for each strategy
-        strategy_f1_scores = {}
-        for strategy_id, pred_df in self.strategy_predictions.items():
-            if 'f1_score' in pred_df.columns:
-                strategy_f1_scores[strategy_id] = pred_df['f1_score'].values
+        # Align each strategy's per-case (tp, fp, fn) by sample_id, since this
+        # is a paired comparison and every strategy must be scored on the
+        # exact same test cases.
+        aligned = {}
+        for sid in fine_tuned_ids:
+            df = self.strategy_predictions[sid]
+            if not {'sample_id', 'tp', 'fp', 'fn'}.issubset(df.columns):
+                print(f"  SKIP {sid}: predictions missing sample_id/tp/fp/fn columns")
+                continue
+            aligned[sid] = df.set_index('sample_id')[['tp', 'fp', 'fn']].sort_index()
 
-        # Find top 2 strategies by mean F1
-        strategy_means = {k: np.mean(v) for k, v in strategy_f1_scores.items()}
-        sorted_strategies = sorted(strategy_means.items(), key=lambda x: x[1], reverse=True)
+        ref_index = aligned[fine_tuned_ids[0]].index
+        for sid in fine_tuned_ids[1:]:
+            if sid not in aligned or not aligned[sid].index.equals(ref_index):
+                print(f"  Note: {sid} does not share the same sample_id index as "
+                      f"{fine_tuned_ids[0]}; excluding from pairwise comparison.")
+        fine_tuned_ids = [sid for sid in fine_tuned_ids
+                          if sid in aligned and aligned[sid].index.equals(ref_index)]
 
-        if len(sorted_strategies) < 2:
-            print("\nNeed at least 2 strategies with F1 scores")
-            return {}
+        pairs = list(combinations(fine_tuned_ids, 2))
+        print(f"\nTesting {len(pairs)} pairs among {len(fine_tuned_ids)} fine-tuned "
+              f"strategies on {len(ref_index)} aligned test cases...\n")
 
-        top1_id, top1_mean = sorted_strategies[0]
-        top2_id, top2_mean = sorted_strategies[1]
+        rows = []
+        for a_id, b_id in pairs:
+            a_name = STRATEGY_INFO[a_id]['name']
+            b_name = STRATEGY_INFO[b_id]['name']
+            dfa, dfb = aligned[a_id], aligned[b_id]
+            tpA, fpA, fnA = dfa.tp.values, dfa.fp.values, dfa.fn.values
+            tpB, fpB, fnB = dfb.tp.values, dfb.fp.values, dfb.fn.values
 
-        top1_name = STRATEGY_INFO.get(top1_id, {}).get('name', top1_id)
-        top2_name = STRATEGY_INFO.get(top2_id, {}).get('name', top2_id)
+            f1a, _, _ = compute_micro_f1(tpA.sum(), fpA.sum(), fnA.sum())
+            f1b, _, _ = compute_micro_f1(tpB.sum(), fpB.sum(), fnB.sum())
+            observed_diff = f1a - f1b
 
-        print(f"\nTop 2 Strategies (by Sample-Averaged F1):")
-        print(f"  #1: {top1_name} (Sample-Avg F1 = {top1_mean:.4f})")
-        print(f"  #2: {top2_name} (Sample-Avg F1 = {top2_mean:.4f})")
+            ci_lo, ci_hi = paired_bootstrap_ci(tpA, fpA, fnA, tpB, fpB, fnB)
+            p_raw = paired_permutation_pvalue(tpA, fpA, fnA, tpB, fpB, fnB, observed_diff)
 
-        # Paired samples
-        f1_1 = strategy_f1_scores[top1_id]
-        f1_2 = strategy_f1_scores[top2_id]
+            rows.append({
+                'strategy_a': a_name, 'strategy_b': b_name,
+                'micro_f1_a': round(f1a, 4), 'micro_f1_b': round(f1b, 4),
+                'difference_a_minus_b': round(observed_diff, 4),
+                'ci_95_lo': round(ci_lo, 4), 'ci_95_hi': round(ci_hi, 4),
+                'p_raw': p_raw,
+            })
+            print(f"  {a_name:20s} vs {b_name:20s}  diff={observed_diff:+.4f}  "
+                  f"CI=[{ci_lo:+.4f}, {ci_hi:+.4f}]  p_raw={p_raw:.4f}")
 
-        # Ensure same length
-        min_len = min(len(f1_1), len(f1_2))
-        f1_1 = f1_1[:min_len]
-        f1_2 = f1_2[:min_len]
+        pairwise_df = pd.DataFrame(rows)
+        pairwise_df['p_holm'] = holm_bonferroni(pairwise_df['p_raw'].values)
+        pairwise_df['significant_after_correction'] = pairwise_df['p_holm'] < 0.05
+        pairwise_df = pairwise_df.sort_values('p_raw').reset_index(drop=True)
 
-        diff = f1_1 - f1_2
+        n_sig = int(pairwise_df['significant_after_correction'].sum())
+        print(f"\n{n_sig} of {len(pairs)} pairs remain significant after "
+              "Holm-Bonferroni correction.")
 
-        # Paired t-test
-        t_stat, t_pvalue = stats.ttest_rel(f1_1, f1_2)
+        pairwise_csv = self.output_dir / 'pairwise_comparison.csv'
+        pairwise_df.to_csv(pairwise_csv, index=False)
+        print(f"Saved: {pairwise_csv}")
 
-        # Wilcoxon signed-rank test (nonparametric)
-        w_stat, w_pvalue = stats.wilcoxon(f1_1, f1_2)
+        # Identify the two highest-micro-F1 strategies (for backward
+        # compatibility with run_bootstrap_cis' paired-difference section and
+        # the Figure 2 significance bracket below).
+        overall_f1 = {sid: compute_micro_f1(aligned[sid].tp.sum(), aligned[sid].fp.sum(),
+                                     aligned[sid].fn.sum())[0] for sid in fine_tuned_ids}
+        ranked = sorted(overall_f1.items(), key=lambda x: x[1], reverse=True)
+        top1_id, top1_f1 = ranked[0]
+        top2_id, top2_f1 = ranked[1]
+        top1_name = STRATEGY_INFO[top1_id]['name']
+        top2_name = STRATEGY_INFO[top2_id]['name']
 
-        # Effect size (Cohen's d for paired samples)
-        cohens_d = np.mean(diff) / np.std(diff, ddof=1) if np.std(diff) > 0 else 0
+        top_pair = pairwise_df[
+            ((pairwise_df.strategy_a == top1_name) & (pairwise_df.strategy_b == top2_name))
+            | ((pairwise_df.strategy_a == top2_name) & (pairwise_df.strategy_b == top1_name))
+        ]
+        corrected_pairwise = None
+        if not top_pair.empty:
+            r = top_pair.iloc[0]
+            corrected_pairwise = {
+                'p_holm': float(r['p_holm']),
+                'significant': bool(r['significant_after_correction']),
+            }
+            print(f"\nTop 2 strategies (by micro-F1): {top1_name} ({top1_f1:.4f}) "
+                  f"vs {top2_name} ({top2_f1:.4f})")
+            print(f"  Holm-corrected p: {corrected_pairwise['p_holm']:.4f} "
+                  f"[{'significant' if corrected_pairwise['significant'] else 'not significant'}]")
 
-        # Interpret significance
-        def interpret_p(p):
-            if p < 0.001: return "highly significant (p < 0.001)"
-            elif p < 0.01: return "very significant (p < 0.01)"
-            elif p < 0.05: return "significant (p < 0.05)"
-            else: return "NOT significant (p >= 0.05)"
-
-        # Interpret effect size
-        if abs(cohens_d) < 0.2:
-            effect_interp = "negligible"
-        elif abs(cohens_d) < 0.5:
-            effect_interp = "small"
-        elif abs(cohens_d) < 0.8:
-            effect_interp = "medium"
-        else:
-            effect_interp = "large"
-
-        print(f"\nPaired t-test (#1 vs #2):")
-        print("-" * 60)
-        print(f"  t-statistic: {t_stat:.4f}")
-        print(f"  p-value: {t_pvalue:.6f}")
-        print(f"  Result: {interpret_p(t_pvalue)}")
-
-        print(f"\nWilcoxon signed-rank test (#1 vs #2):")
-        print("-" * 60)
-        print(f"  W-statistic: {w_stat:.1f}")
-        print(f"  p-value: {w_pvalue:.6f}")
-        print(f"  Result: {interpret_p(w_pvalue)}")
-
-        print(f"\nEffect Size:")
-        print(f"  Cohen's d: {cohens_d:.4f} ({effect_interp} effect)")
-        print(f"  Mean difference: {np.mean(diff):.4f}")
-
-        # Holm-Bonferroni-corrected, micro-F1-matched test (used for figure
-        # annotations instead of the Wilcoxon test above -- see docstring).
-        corrected = self.load_corrected_pairwise_pvalue(top1_name, top2_name)
-        if corrected:
-            print(f"\nHolm-Bonferroni-corrected permutation test ({top1_name} vs {top2_name}):")
-            print("-" * 60)
-            print(f"  p_holm: {corrected['p_holm']:.4f}")
-            print(f"  Result: {'significant' if corrected['significant'] else 'NOT significant'} "
-                  f"at alpha=0.05 after correction across 15 pairwise comparisons")
-
-        # Store results for use in visualizations
         self.statistical_results = {
             'top1_strategy': top1_id,
             'top1_name': top1_name,
-            'top1_sample_avg_f1': float(top1_mean),
             'top2_strategy': top2_id,
             'top2_name': top2_name,
-            'top2_sample_avg_f1': float(top2_mean),
-            'paired_ttest': {
-                't_statistic': float(t_stat),
-                'p_value': float(t_pvalue),
-                'significant_0.05': bool(t_pvalue < 0.05),
-                'significant_0.01': bool(t_pvalue < 0.01),
-                'significant_0.001': bool(t_pvalue < 0.001),
-            },
-            'wilcoxon': {
-                'w_statistic': float(w_stat),
-                'p_value': float(w_pvalue),
-                'significant_0.05': bool(w_pvalue < 0.05),
-                'significant_0.01': bool(w_pvalue < 0.01),
-                'significant_0.001': bool(w_pvalue < 0.001),
-            },
-            'effect_size': {
-                'cohens_d': float(cohens_d),
-                'interpretation': effect_interp,
-                'mean_difference': float(np.mean(diff))
-            },
-            'corrected_pairwise': corrected,
+            'n_pairs_tested': len(pairs),
+            'n_significant_after_correction': n_sig,
+            'pairwise_comparisons': pairwise_df.to_dict(orient='records'),
+            'corrected_pairwise': corrected_pairwise,
         }
 
-        # Save results to file
         stats_path = self.output_dir / 'statistical_tests.json'
         with open(stats_path, 'w') as f:
             json.dump(self.statistical_results, f, indent=2)
@@ -670,153 +721,6 @@ class ResultsAggregator:
         self._plot_grouped_strategy_comparison()
         self._plot_precision_recall_comparison()  # Supplementary figure
 
-    def _plot_strategy_comparison_bar(self):
-        """Create bar chart comparing all strategies with statannotations for significance.
-
-        Uses actual Micro F1 values from evaluation results (not re-computed from samples)
-        to ensure correctness and consistency with reported metrics.
-        Colors are assigned dynamically based on F1 ranking for visual consistency.
-        """
-        print("\n  Creating strategy comparison bar chart...")
-
-        # Build data structures from actual evaluation results
-        strategy_data = []
-        for strategy_id, results in self.strategy_results.items():
-            info = STRATEGY_INFO.get(strategy_id, {})
-            metrics = results.get('performance_metrics', {})
-            micro_f1 = metrics.get('micro_f1', 0)
-
-            strategy_name = info.get('name', strategy_id)
-            if not info.get('fine_tuned', True):
-                display_name = f"{strategy_name}\n(No Fine-tuning)"
-            else:
-                display_name = strategy_name
-
-            strategy_data.append({
-                'strategy_id': strategy_id,
-                'name': strategy_name,
-                'display_name': display_name,
-                'micro_f1': micro_f1,
-                'fine_tuned': info.get('fine_tuned', True)
-            })
-
-        # Sort by Micro F1 (ascending for left-to-right improvement visual)
-        strategy_data.sort(key=lambda x: x['micro_f1'])
-
-        # Move Base Models (not fine-tuned) to leftmost positions
-        base_items = [s for s in strategy_data if not s['fine_tuned']]
-        ft_items = [s for s in strategy_data if s['fine_tuned']]
-
-        # Sort base items by F1 (ascending) and put them first
-        base_items.sort(key=lambda x: x['micro_f1'])
-        strategy_data = base_items + ft_items
-
-        # Assign colors dynamically based on position (darker = higher F1)
-        # Professional grey gradient from light to dark
-        n_strategies = len(strategy_data)
-        n_base = len(base_items)
-        n_ft = len(ft_items)
-        colors = []
-        strategy_colors = self._get_strategy_colors()
-        for i, s in enumerate(strategy_data):
-            # Use centralized color palette from config.py
-            strategy_id = s.get('strategy_id', '')
-            colors.append(strategy_colors.get(strategy_id, COLORS['neutral']))
-
-        # Extract ordered lists for plotting
-        display_names = [s['display_name'] for s in strategy_data]
-        micro_f1_values = [s['micro_f1'] for s in strategy_data]
-
-        # Create figure
-        fig, ax = plt.subplots(figsize=(12, 7))
-        x_pos = np.arange(len(strategy_data))
-
-        # Create bars
-        bars = ax.bar(x_pos, micro_f1_values, color=colors,
-                      edgecolor='black', linewidth=0.8)
-
-        # Add hatch pattern to all base model bars (not fine-tuned)
-        for i, s in enumerate(strategy_data):
-            if not s['fine_tuned']:
-                bars[i].set_hatch('///')
-
-        # Add F1 values on top of bars (3 decimal places for journal)
-        for i, (bar, f1_val) in enumerate(zip(bars, micro_f1_values)):
-            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.012,
-                    f'{f1_val:.3f}', ha='center', va='bottom', fontsize=10, fontweight='bold')
-
-        # Statistical significance annotations - draw manually for better control
-        # Get fine-tuned strategies sorted by actual Micro F1 (descending)
-        ft_strategies = [s for s in strategy_data if s['fine_tuned']]
-        ft_strategies.sort(key=lambda x: x['micro_f1'], reverse=True)
-
-        # Get positions of top strategies in display order
-        def get_bar_index(display_name):
-            return display_names.index(display_name)
-
-        if len(ft_strategies) >= 2:
-            max_f1 = max(micro_f1_values)
-
-            # First bracket: top 1 vs top 2 (Keyword+CoT vs Chain-of-Thought)
-            idx1 = get_bar_index(ft_strategies[0]['display_name'])
-            idx2 = get_bar_index(ft_strategies[1]['display_name'])
-            x1, x2 = min(idx1, idx2), max(idx1, idx2)
-            y_bracket1 = max_f1 + 0.045
-
-            # Draw bracket with significance annotation based on actual statistical test
-            ax.plot([x1, x1, x2, x2], [y_bracket1 - 0.01, y_bracket1, y_bracket1, y_bracket1 - 0.01],
-                    color='black', linewidth=1.2)
-            # Determine annotation based on statistical test p-value
-            if hasattr(self, 'statistical_results') and self.statistical_results:
-                p_val = self.statistical_results.get('paired_ttest', {}).get('p_value', 1.0)
-                if p_val < 0.001:
-                    sig_annotation = '***'
-                elif p_val < 0.01:
-                    sig_annotation = '**'
-                elif p_val < 0.05:
-                    sig_annotation = '*'
-                else:
-                    sig_annotation = 'ns'
-            else:
-                sig_annotation = 'ns'
-            ax.text((x1 + x2) / 2, y_bracket1 + 0.008, sig_annotation, ha='center', va='bottom',
-                    fontsize=11, fontweight='bold')
-
-            if len(ft_strategies) >= 3:
-                # Second bracket: top 2 vs top 3 (Chain-of-Thought vs Keyword-Augmented)
-                idx2 = get_bar_index(ft_strategies[1]['display_name'])
-                idx3 = get_bar_index(ft_strategies[2]['display_name'])
-                x1, x2 = min(idx2, idx3), max(idx2, idx3)
-                y_bracket2 = max_f1 + 0.095
-
-                # Draw bracket
-                ax.plot([x1, x1, x2, x2], [y_bracket2 - 0.01, y_bracket2, y_bracket2, y_bracket2 - 0.01],
-                        color='black', linewidth=1.2)
-                ax.text((x1 + x2) / 2, y_bracket2 + 0.008, '****', ha='center', va='bottom',
-                        fontsize=11, fontweight='bold')
-
-        # Configure axes
-        ax.set_xticks(x_pos)
-        ax.set_xticklabels(display_names, rotation=45, ha='right', fontsize=11)
-        ax.set_xlabel('')
-        ax.set_ylabel('Micro F1 Score', fontsize=12, fontweight='bold')
-        ax.set_title('Evaluation Approach Comparison for Psychiatric F-Code Prediction',
-                     fontsize=14, fontweight='bold', pad=15)
-
-        # Horizontal gridlines only and limits
-        ax.yaxis.grid(True, linestyle='-', alpha=0.3, color='grey')
-        ax.set_axisbelow(True)
-        ax.set_ylim(0, max(micro_f1_values) * 1.28)  # Extra space for brackets
-
-        plt.tight_layout()
-        plt.savefig(self.output_dir / 'fig1_strategy_comparison.png', dpi=300, bbox_inches='tight')
-        plt.savefig(self.output_dir / 'fig1_strategy_comparison.pdf', bbox_inches='tight')
-        print("    Saved: fig1_strategy_comparison.png/pdf")
-        plt.close()
-
-        # Print verification info
-        print(f"    Verified: Best strategy is '{ft_strategies[0]['name']}' with Micro F1 = {ft_strategies[0]['micro_f1']:.4f}")
-
     def _plot_grouped_strategy_comparison(self):
         """Create grouped bar chart with 3 categories: Base, Prompting, Keyword Augmentation.
 
@@ -985,9 +889,8 @@ class ResultsAggregator:
                         color='black', linewidth=1.2)
 
                 # Significance annotation: Holm-Bonferroni-corrected permutation test on
-                # the micro-F1 difference (13_PairwiseStatisticalComparison.py), matching
-                # the effect actually reported in Table 2 -- not the Wilcoxon signed-rank
-                # test on per-sample F1 scores (Reviewer 1 Comment 3 / Reviewer 2 Comment 7).
+                # the micro-F1 difference, from run_statistical_tests() above, matching
+                # the effect actually reported in Table 2.
                 corrected = None
                 if hasattr(self, 'statistical_results') and self.statistical_results:
                     corrected = self.statistical_results.get('corrected_pairwise')
@@ -1003,7 +906,7 @@ class ResultsAggregator:
                         sig_label = 'ns'
                 else:
                     sig_label = '*'  # Default based on known result; run
-                    # 13_PairwiseStatisticalComparison.py first for the corrected value
+                    # run_statistical_tests() first for the corrected value
                 ax.text((x1 + x2) / 2, y_bracket + 0.008, sig_label, ha='center', va='bottom',
                         fontsize=11, fontweight='bold')
 
