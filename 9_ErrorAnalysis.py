@@ -7,11 +7,20 @@ This script performs detailed error analysis on model predictions, including:
     2. Error categorization (perfect match, partial match, complete miss)
     3. Confusion matrix for top F-codes
     4. Common error patterns identification
+    5. Performance by code-frequency tier (Reviewer 1, Comment 6): whether
+       rare codes are systematically missed, broken down by how many
+       ground-truth test instances each code has
+    6. Chunk-count sensitivity (Reviewer 2, Comment 3): whether performance
+       differs between single-chunk documents (no label noise possible)
+       and multi-chunk documents (each chunk inherits the full
+       document-level label set, so labels can be mismatched with a given
+       chunk's content)
 
 Output:
     - Error analysis report (JSON)
     - Confusion matrix visualization (PNG)
     - Error breakdown tables (CSV)
+    - frequency_tier_breakdown.csv, chunk_sensitivity.csv
 
 Usage:
     python 9_ErrorAnalysis.py --results-dir ./outputs --output-dir ./outputs/9_ErrorAnalysis
@@ -34,7 +43,7 @@ import warnings
 # Import centralized config for colors and style
 from config import (
     COLORS, FIGURE_STYLE, apply_figure_style, get_category_color,
-    OUTPUT_DIR, OUTPUT_DIR_6F, OUTPUT_DIR_9_ERROR
+    OUTPUT_DIR, OUTPUT_DIR_6F, OUTPUT_DIR_6D, OUTPUT_DIR_9_ERROR
 )
 
 warnings.filterwarnings('ignore')
@@ -273,6 +282,195 @@ class ErrorAnalyzer:
 
         return dict(confusion)
 
+    def analyze_by_frequency_tier(self) -> Dict:
+        """
+        Break down per-code performance by ground-truth frequency tier
+        (Reviewer 1, Comment 6): are rare codes systematically missed, and
+        does performance improve smoothly with frequency or drop off sharply
+        below some threshold?
+
+        The rarest tier boundary (1-5 occurrences) matches the "100 codes
+        (74%) had five or fewer test instances" statement reported
+        elsewhere in the manuscript for the same population.
+
+        Returns:
+            Dictionary with per-tier code counts, aggregate (micro) F1,
+            mean per-code F1, and the codes scoring F1 = 0.000 in each tier.
+        """
+        print("\n" + "=" * 70)
+        print("PERFORMANCE BY CODE-FREQUENCY TIER")
+        print("=" * 70)
+
+        per_code = self.results.get('performance_metrics', {}).get('per_code_metrics', {})
+        if not per_code:
+            print("No per-code metrics found in evaluation results - skipping.")
+            return {}
+
+        # Codes with occurrences == 0 are predicted but never actually true
+        # (false-positive-only codes) and have no ground-truth frequency to
+        # bucket, so they are excluded here entirely, matching the "135
+        # codes with at least one true instance" population already used
+        # elsewhere in the manuscript for macro-F1 and per-code analysis.
+        tiers = [
+            ('Rare (1-5)', 1, 5),
+            ('Uncommon (6-20)', 6, 20),
+            ('Moderate (21-100)', 21, 100),
+            ('Common (>100)', 101, float('inf')),
+        ]
+
+        tier_results = []
+        for tier_name, lo, hi in tiers:
+            codes_in_tier = {
+                code: m for code, m in per_code.items()
+                if lo <= m.get('occurrences', 0) <= hi
+            }
+            if not codes_in_tier:
+                continue
+
+            tp = sum(m['tp'] for m in codes_in_tier.values())
+            fp = sum(m['fp'] for m in codes_in_tier.values())
+            fn = sum(m['fn'] for m in codes_in_tier.values())
+            precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+            recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+            micro_f1 = (2 * precision * recall / (precision + recall)
+                        if (precision + recall) > 0 else 0.0)
+            f1_scores = [m['f1'] for m in codes_in_tier.values()]
+            mean_f1 = float(np.mean(f1_scores))
+            zero_f1_codes = sorted(
+                [code for code, m in codes_in_tier.items() if m['f1'] == 0.0]
+            )
+
+            tier_results.append({
+                'tier': tier_name,
+                'num_codes': len(codes_in_tier),
+                'total_occurrences': sum(m['occurrences'] for m in codes_in_tier.values()),
+                'micro_precision': round(precision, 4),
+                'micro_recall': round(recall, 4),
+                'micro_f1': round(micro_f1, 4),
+                'mean_per_code_f1': round(mean_f1, 4),
+                'num_zero_f1_codes': len(zero_f1_codes),
+                'zero_f1_codes': zero_f1_codes,
+            })
+
+        print(f"\n{'Tier':<20} {'Codes':<8} {'Occurrences':<13} {'Micro F1':<10} {'Mean F1':<10} {'F1=0 codes'}")
+        print("-" * 85)
+        for t in tier_results:
+            print(f"{t['tier']:<20} {t['num_codes']:<8} {t['total_occurrences']:<13} "
+                  f"{t['micro_f1']:<10.4f} {t['mean_per_code_f1']:<10.4f} {t['num_zero_f1_codes']}")
+
+        # Save CSV (without the full zero_f1_codes list, for a compact table)
+        csv_rows = [{k: v for k, v in t.items() if k != 'zero_f1_codes'} for t in tier_results]
+        csv_path = self.output_dir / 'frequency_tier_breakdown.csv'
+        pd.DataFrame(csv_rows).to_csv(csv_path, index=False)
+        print(f"\nSaved: {csv_path}")
+
+        return {'tiers': tier_results}
+
+    def analyze_chunk_sensitivity(self, results_dir: str = None) -> Dict:
+        """
+        Compare performance on single-chunk vs. multi-chunk samples
+        (Reviewer 2, Comment 3): every training chunk inherits the full
+        document-level label set, so a chunk may be trained against labels
+        it contains no textual evidence for. This label noise can only
+        occur in multi-chunk documents; a single-chunk document's one chunk
+        is the whole note, so its labels are never mismatched with its
+        content. A performance gap between the two groups is therefore
+        consistent with (though not sole proof of) sensitivity to this
+        label-assignment strategy.
+
+        This check is only meaningful for a strategy that actually uses
+        the overlapping-chunking text handling. It defaults to the
+        Chain-of-Thought strategy (6d) rather than this script's usual
+        default (Keyword + CoT, 6f), because Keyword + CoT uses keyword
+        extraction to fit each document in a single pass and so has no
+        multi-chunk samples at all.
+
+        Args:
+            results_dir: Directory to load predictions from. Defaults to
+                the Chain-of-Thought (chunking) strategy, independent of
+                whatever --results-dir this script was run with.
+
+        Returns:
+            Dictionary with per-group sample counts, micro-F1, and a
+            bootstrap 95% CI for the single-chunk minus multi-chunk gap.
+        """
+        print("\n" + "=" * 70)
+        print("CHUNK-COUNT SENSITIVITY (SINGLE- VS. MULTI-CHUNK SAMPLES)")
+        print("=" * 70)
+
+        results_dir = Path(results_dir) if results_dir else Path(OUTPUT_DIR_6D)
+        csv_files = sorted(results_dir.glob("predictions_*.csv"),
+                            key=lambda p: p.stat().st_mtime, reverse=True)
+        if not csv_files:
+            print(f"No predictions CSV found in {results_dir} - skipping.")
+            return {}
+        print(f"Loading: {csv_files[0]}")
+        df = pd.read_csv(csv_files[0])
+
+        if 'num_chunks' not in df.columns:
+            print("Predictions CSV has no num_chunks column - skipping.")
+            return {}
+        if (df['num_chunks'] > 1).sum() == 0:
+            print(f"No multi-chunk samples found in {csv_files[0].name} - "
+                  "this strategy does not use overlapping chunking. Skipping.")
+            return {}
+        single = df[df['num_chunks'] == 1]
+        multi = df[df['num_chunks'] > 1]
+        if len(single) == 0:
+            print(f"No single-chunk samples found in {csv_files[0].name} - skipping.")
+            return {}
+
+        def micro_f1_group(group: pd.DataFrame) -> Tuple[float, int, int, int]:
+            tp, fp, fn = group['tp'].sum(), group['fp'].sum(), group['fn'].sum()
+            p = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+            r = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+            f1 = 2 * p * r / (p + r) if (p + r) > 0 else 0.0
+            return f1, int(tp), int(fp), int(fn)
+
+        single_f1, s_tp, s_fp, s_fn = micro_f1_group(single)
+        multi_f1, m_tp, m_fp, m_fn = micro_f1_group(multi)
+        observed_gap = single_f1 - multi_f1
+
+        # Independent-groups bootstrap (each group resampled from itself,
+        # since single- and multi-chunk samples are different documents,
+        # not a paired comparison).
+        rng = np.random.default_rng(42)
+        n_iter = 2000
+        gaps = np.empty(n_iter)
+        single_tp, single_fp, single_fn = single['tp'].values, single['fp'].values, single['fn'].values
+        multi_tp, multi_fp, multi_fn = multi['tp'].values, multi['fp'].values, multi['fn'].values
+        for i in range(n_iter):
+            s_idx = rng.integers(0, len(single_tp), len(single_tp))
+            m_idx = rng.integers(0, len(multi_tp), len(multi_tp))
+            s_f1, _, _, _ = micro_f1_group(pd.DataFrame({
+                'tp': single_tp[s_idx], 'fp': single_fp[s_idx], 'fn': single_fn[s_idx]
+            }))
+            m_f1, _, _, _ = micro_f1_group(pd.DataFrame({
+                'tp': multi_tp[m_idx], 'fp': multi_fp[m_idx], 'fn': multi_fn[m_idx]
+            }))
+            gaps[i] = s_f1 - m_f1
+        ci_lo, ci_hi = np.percentile(gaps, [2.5, 97.5])
+
+        print(f"\nSingle-chunk samples: n={len(single)}, Micro F1={single_f1:.4f}")
+        print(f"Multi-chunk samples:  n={len(multi)}, Micro F1={multi_f1:.4f}")
+        print(f"Gap (single - multi): {observed_gap:+.4f}  95% CI: [{ci_lo:+.4f}, {ci_hi:+.4f}]")
+
+        result = {
+            'single_chunk': {'n_samples': len(single), 'micro_f1': round(single_f1, 4)},
+            'multi_chunk': {'n_samples': len(multi), 'micro_f1': round(multi_f1, 4)},
+            'gap_single_minus_multi': round(observed_gap, 4),
+            'gap_95ci': [round(ci_lo, 4), round(ci_hi, 4)],
+        }
+
+        csv_path = self.output_dir / 'chunk_sensitivity.csv'
+        pd.DataFrame([
+            {'group': 'Single-chunk', 'n_samples': len(single), 'micro_f1': round(single_f1, 4)},
+            {'group': 'Multi-chunk', 'n_samples': len(multi), 'micro_f1': round(multi_f1, 4)},
+        ]).to_csv(csv_path, index=False)
+        print(f"\nSaved: {csv_path}")
+
+        return result
+
     def create_confusion_matrix(self, top_n: int = 10):
         """
         Create a multi-label prediction co-occurrence matrix for the top N F-codes.
@@ -423,7 +621,9 @@ class ErrorAnalyzer:
         categories: Dict,
         fp_counter: Counter,
         fn_counter: Counter,
-        confusion_patterns: Dict
+        confusion_patterns: Dict,
+        frequency_tiers: Dict = None,
+        chunk_sensitivity: Dict = None,
     ):
         """
         Save comprehensive error analysis report.
@@ -433,6 +633,8 @@ class ErrorAnalyzer:
             fp_counter: False positive counts
             fn_counter: False negative counts
             confusion_patterns: Confusion pattern dictionary
+            frequency_tiers: Output of analyze_by_frequency_tier() (R1-6)
+            chunk_sensitivity: Output of analyze_chunk_sensitivity() (R2-3)
         """
         print("\n" + "=" * 70)
         print("SAVING ERROR ANALYSIS REPORT")
@@ -471,7 +673,9 @@ class ErrorAnalyzer:
             'top_false_negatives': [
                 {'code': code, 'count': count, 'percentage': round(count / total * 100, 1)}
                 for code, count in fn_counter.most_common(20)
-            ]
+            ],
+            'frequency_tier_breakdown': frequency_tiers or {},
+            'chunk_sensitivity': chunk_sensitivity or {},
         }
 
         # Save JSON report
@@ -531,6 +735,12 @@ class ErrorAnalyzer:
         # Analyze confusion patterns
         confusion_patterns = self.analyze_confusion_patterns()
 
+        # Performance by code-frequency tier (Reviewer 1, Comment 6)
+        frequency_tiers = self.analyze_by_frequency_tier()
+
+        # Chunk-count sensitivity (Reviewer 2, Comment 3)
+        chunk_sensitivity = self.analyze_chunk_sensitivity()
+
         # Create confusion matrix
         self.create_confusion_matrix(top_n=10)
 
@@ -538,7 +748,8 @@ class ErrorAnalyzer:
         self.create_error_visualizations(fp_counter, fn_counter)
 
         # Save report
-        self.save_error_report(categories, fp_counter, fn_counter, confusion_patterns)
+        self.save_error_report(categories, fp_counter, fn_counter, confusion_patterns,
+                                frequency_tiers, chunk_sensitivity)
 
         print("\n" + "=" * 70)
         print("ERROR ANALYSIS COMPLETE")
