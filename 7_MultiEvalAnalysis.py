@@ -10,9 +10,8 @@ Analyses Performed:
     2. Publication-ready figures (bar charts, radar plots, heatmaps)
     3. Pairwise statistical comparison across all 6 fine-tuned strategies: a
        paired permutation test on the micro-F1 difference (matching the
-       aggregate effect actually reported, e.g. in Table 2) for every one of
-       the 15 pairs, with a Holm-Bonferroni correction across all 15 tests
-       (Reviewer 1, Comment 3; Reviewer 2, Comment 7)
+       aggregate effect actually reported) for every one of the 15 pairs,
+       with a Holm-Bonferroni correction across all 15 tests
 
 Output:
     - Comparison tables (CSV, LaTeX)
@@ -26,25 +25,21 @@ Usage:
 Author: Clinical Note Analysis Study
 """
 
-import os
 import json
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
 import argparse
 from itertools import combinations
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Tuple, Optional
-from collections import defaultdict
 import warnings
 
 # Import centralized config for reproducibility and visualization
 from config import (
     RANDOM_SEED, set_all_seeds,
-    STRATEGY_COLORS, COLORS, FIGURE_STYLE,
-    get_strategy_color, get_category_color, apply_figure_style,
+    STRATEGY_COLORS, COLORS,
+    apply_figure_style,
     OUTPUT_DIR, OUTPUT_DIR_7_MULTI
 )
 
@@ -136,18 +131,12 @@ STRATEGY_INFO = {
 
 
 # =============================================================================
-# Pairwise statistical comparison (Reviewer 1, Comment 3; Reviewer 2, Comment 7)
+# Pairwise statistical comparison
 #
 # A paired permutation test on the micro-F1 difference, run for every pair
 # among the fine-tuned strategies, with a Holm-Bonferroni correction across
-# all pairs. This replaces a Wilcoxon signed-rank test on per-sample F1
-# scores, which tests a related but different quantity: it treats every test
-# case as one equally-weighted "vote" regardless of how many diagnosis codes
-# it carries, whereas the aggregate micro-F1 we report pools codes across all
-# cases. The two can disagree when the difference is concentrated in
-# multi-code cases. A permutation test on the pooled micro-F1 difference
-# tests exactly the effect we report, with no such mismatch, while remaining
-# nonparametric like the Wilcoxon test it replaces.
+# all pairs. See run_statistical_tests() below for why this test matches
+# the aggregate effect actually reported.
 # =============================================================================
 
 def compute_micro_f1(tp, fp, fn):
@@ -156,7 +145,7 @@ def compute_micro_f1(tp, fp, fn):
     return (2 * p * r / (p + r) if (p + r) > 0 else 0.0), p, r
 
 
-def paired_bootstrap_ci(tpA, fpA, fnA, tpB, fpB, fnB, n_iter=2000, seed=RANDOM_SEED):
+def paired_bootstrap_ci(tpA, fpA, fnA, tpB, fpB, fnB, n_iter=1000, seed=RANDOM_SEED):
     """95% CI for micro-F1(A) - micro-F1(B), resampling the SAME paired
     indices for both strategies each iteration (they share the same test
     cases)."""
@@ -243,13 +232,21 @@ class ResultsAggregator:
         print("=" * 70)
 
         for strategy_id in STRATEGY_INFO.keys():
-            # Find strategy output directory
+            # Find strategy output directory. Prefer an exact match first --
+            # several ablation runs created sibling directories sharing this
+            # prefix (e.g. 6a_ZeroShotBaseline_simpleTrain_val200), and
+            # glob() match order is not guaranteed to put the canonical
+            # directory first.
             strategy_dir = None
-            for pattern in [f"{strategy_id}*", f"*{strategy_id}*"]:
-                matches = list(self.outputs_dir.glob(pattern))
-                if matches:
-                    strategy_dir = matches[0]
-                    break
+            exact_dir = self.outputs_dir / strategy_id
+            if exact_dir.is_dir():
+                strategy_dir = exact_dir
+            else:
+                for pattern in [f"{strategy_id}*", f"*{strategy_id}*"]:
+                    matches = sorted(self.outputs_dir.glob(pattern))
+                    if matches:
+                        strategy_dir = matches[0]
+                        break
 
             if strategy_dir is None or not strategy_dir.exists():
                 print(f"\n  [{strategy_id}] Not found - skipping")
@@ -415,23 +412,18 @@ class ResultsAggregator:
 
         For every pair among the 6 fine-tuned strategies (15 pairs total),
         runs a paired permutation test directly on the micro-F1 difference
-        (the aggregate effect actually reported, e.g. in Table 2), with a
-        matching paired bootstrap CI, then applies a Holm-Bonferroni
-        correction across all 15 tests.
+        (the aggregate effect actually reported), with a matching paired
+        bootstrap CI, then applies a Holm-Bonferroni correction across all
+        15 tests.
 
-        This replaces a Wilcoxon signed-rank test on per-sample F1 scores
-        that was previously run for only the top 2 strategies (Reviewer 1,
-        Comment 3: several claimed pairwise differences, including the
-        "distinct upper tier" claim, were never formally tested, and 15
-        pairs tested at once need a multiple-comparison correction).
-        The Wilcoxon test also targeted per-sample F1, a related but
-        different quantity from the aggregate micro-F1 difference we report
-        (Reviewer 2, Comment 7): it treats every test case as one equally
-        weighted "vote" regardless of how many diagnosis codes it carries,
-        while the aggregate micro-F1 pools codes across all cases, so the
-        two can disagree when the difference is concentrated in
+        A paired permutation test on the micro-F1 difference is used instead
+        of a Wilcoxon signed-rank test on per-sample F1, since the latter
+        targets a different quantity: it treats every test case as one
+        equally weighted "vote" regardless of how many diagnosis codes it
+        carries, while the aggregate micro-F1 pools codes across all cases,
+        so the two can disagree when the difference is concentrated in
         multi-code cases. The permutation test below tests exactly the
-        effect we report.
+        effect actually reported.
         """
         print("\n" + "=" * 70)
         print("PAIRWISE STATISTICAL COMPARISON (Holm-Bonferroni corrected)")
@@ -757,7 +749,6 @@ class ResultsAggregator:
 
         # Build ordered list by groups
         strategy_data = []
-        group_labels = []
         group_positions = []
 
         # Group 1: Base (use full names with "(No Fine-tuning)" suffix)
@@ -867,8 +858,6 @@ class ResultsAggregator:
         all_sorted = sorted(strategy_data, key=lambda x: x['micro_f1'], reverse=True)
 
         if len(all_sorted) >= 2:
-            max_f1 = max(micro_f1_values)
-
             # Helper to get bar index
             def get_bar_index(strategy_id):
                 for i, s in enumerate(strategy_data):
@@ -880,17 +869,8 @@ class ResultsAggregator:
             idx1 = get_bar_index(all_sorted[0]['strategy_id'])
             idx2 = get_bar_index(all_sorted[1]['strategy_id'])
             if idx1 >= 0 and idx2 >= 0:
-                x1, x2 = x_pos[min(idx1, idx2)], x_pos[max(idx1, idx2)]
-                # Place bracket above the highest CI whisker + F1 label
-                max_ci_upper = max(ci_upper_vals[idx1], ci_upper_vals[idx2])
-                y_bracket = max_ci_upper + 0.06  # Clear whisker caps and F1 labels
-
-                ax.plot([x1, x1, x2, x2], [y_bracket - 0.01, y_bracket, y_bracket, y_bracket - 0.01],
-                        color='black', linewidth=1.2)
-
                 # Significance annotation: Holm-Bonferroni-corrected permutation test on
-                # the micro-F1 difference, from run_statistical_tests() above, matching
-                # the effect actually reported in Table 2.
+                # the micro-F1 difference, from run_statistical_tests() above.
                 corrected = None
                 if hasattr(self, 'statistical_results') and self.statistical_results:
                     corrected = self.statistical_results.get('corrected_pairwise')
@@ -907,8 +887,20 @@ class ResultsAggregator:
                 else:
                     sig_label = '*'  # Default based on known result; run
                     # run_statistical_tests() first for the corrected value
-                ax.text((x1 + x2) / 2, y_bracket + 0.008, sig_label, ha='center', va='bottom',
-                        fontsize=11, fontweight='bold')
+
+                # Only draw the bracket and label when the difference is
+                # significant; omit both entirely for a null result rather
+                # than annotating "ns".
+                if sig_label != 'ns':
+                    x1, x2 = x_pos[min(idx1, idx2)], x_pos[max(idx1, idx2)]
+                    # Place bracket above the highest CI whisker + F1 label
+                    max_ci_upper = max(ci_upper_vals[idx1], ci_upper_vals[idx2])
+                    y_bracket = max_ci_upper + 0.06  # Clear whisker caps and F1 labels
+
+                    ax.plot([x1, x1, x2, x2], [y_bracket - 0.01, y_bracket, y_bracket, y_bracket - 0.01],
+                            color='black', linewidth=1.2)
+                    ax.text((x1 + x2) / 2, y_bracket + 0.008, sig_label, ha='center', va='bottom',
+                            fontsize=11, fontweight='bold')
 
         # Configure axes
         ax.set_xticks(x_pos)

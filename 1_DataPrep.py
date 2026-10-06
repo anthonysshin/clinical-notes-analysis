@@ -3,11 +3,9 @@
 1_DataPrep.py - MIMIC-IV Dataset Preparation for Psychiatric F-Code Prediction
 
 This script creates train/validation/test splits from MIMIC-IV discharge notes
-with ICD-10 F-codes (psychiatric diagnoses).
-
-KEY DIFFERENCE FROM CNA_Final_1130_2025:
-- NO primary_seq filter - uses ALL admissions with ANY F-code
-- This approach achieved F1=0.67 in the original study
+with ICD-10 F-codes (psychiatric diagnoses). No primary_seq filter is applied --
+all admissions with any F-code diagnosis are included, not just those where a
+psychiatric code is the primary diagnosis.
 
 Pipeline:
     Step 1: Load and merge discharge notes with F-code diagnoses
@@ -30,7 +28,6 @@ Usage:
 """
 
 import pandas as pd
-import numpy as np
 from sklearn.model_selection import train_test_split
 import json
 import time
@@ -457,8 +454,7 @@ class MIMICDatasetCreator:
         self.stats['metadata'] = {
             'created_at': datetime.now().isoformat(),
             'output_directory': str(output_dir),
-            'pipeline_version': 'CNA_Final_1206_2025',
-            'key_difference': 'NO primary_seq filter - ALL F-codes included'
+            'cohort_filter': 'No primary_seq filter - all F-codes included'
         }
 
         with open(output_dir / 'mimic_iv_dataset_stats.json', 'w') as f:
@@ -478,8 +474,7 @@ def main():
 
     print("\n" + "=" * 70)
     print("MIMIC-IV DATASET PREPARATION")
-    print("Pipeline: CNA_Final_1206_2025")
-    print("Key: NO primary_seq filter - ALL F-codes included")
+    print("No primary_seq filter - all F-codes included")
     print("=" * 70)
 
     creator = MIMICDatasetCreator(args.mimic_path)

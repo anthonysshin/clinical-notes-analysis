@@ -112,6 +112,23 @@ def set_all_seeds(seed: Optional[int] = None):
     print(f"[config] Random seeds set to {seed} for reproducibility")
 
 
+def get_package_versions() -> dict:
+    """
+    Capture installed versions of packages whose behavior can affect training/
+    evaluation results (not just runtime speed), for provenance in saved
+    training_config.json / evaluation_results_*.json files.
+    """
+    from importlib.metadata import version, PackageNotFoundError
+    packages = ['unsloth', 'unsloth_zoo', 'torch', 'transformers', 'peft', 'trl', 'bitsandbytes']
+    versions = {}
+    for pkg in packages:
+        try:
+            versions[pkg] = version(pkg)
+        except PackageNotFoundError:
+            versions[pkg] = None
+    return versions
+
+
 # =============================================================================
 # PROJECT PATHS
 # =============================================================================
@@ -138,15 +155,19 @@ TRAIN_CHUNKED_PATH = os.path.join(DATA_DIR, 'train_chunked.json')
 VAL_CHUNKED_PATH = os.path.join(DATA_DIR, 'val_chunked.json')
 TEST_CHUNKED_PATH = os.path.join(DATA_DIR, 'test_chunked.json')
 
-# Legacy truncated paths (kept for compatibility)
-TRAIN_TRUNCATED_PATH = os.path.join(DATA_DIR, 'train_truncated.json')
-VAL_TRUNCATED_PATH = os.path.join(DATA_DIR, 'val_truncated.json')
-TEST_TRUNCATED_PATH = os.path.join(DATA_DIR, 'test_truncated.json')
-
 # Model directories
 MODELS_DIR = os.path.join(PROJECT_DIR, 'models')
 CHECKPOINT_DIR = os.path.join(MODELS_DIR, 'checkpoints')
 FINAL_MODEL_DIR = os.path.join(MODELS_DIR, 'final_model')
+
+# Full-scale "Simple" training-prompt condition, used to compare simple vs.
+# chain-of-thought system prompts under identical training configurations.
+# Kept in a separate directory so the main CoT-trained model above is never
+# overwritten. Selected via `--training-prompt simple` in 4_FineTuning.py,
+# 5_FindBestCheckpoint.py, and 6d_Eval_ChainOfThought.py.
+CHECKPOINT_DIR_SIMPLE = os.path.join(MODELS_DIR, 'checkpoints_simple')
+FINAL_MODEL_DIR_SIMPLE = os.path.join(MODELS_DIR, 'final_model_simple')
+BEST_CHECKPOINT_FILE_SIMPLE = os.path.join(PROJECT_DIR, 'best_checkpoint_simple.json')
 
 # =============================================================================
 # OUTPUT DIRECTORIES (Numbered to match script names)
@@ -165,6 +186,8 @@ OUTPUT_DIR_6A = os.path.join(OUTPUT_DIR, '6a_ZeroShotBaseline')
 OUTPUT_DIR_6B = os.path.join(OUTPUT_DIR, '6b_FewShotExemplar')
 OUTPUT_DIR_6C = os.path.join(OUTPUT_DIR, '6c_RuleConstrained')
 OUTPUT_DIR_6D = os.path.join(OUTPUT_DIR, '6d_ChainOfThought')
+OUTPUT_DIR_6D_SIMPLE = os.path.join(OUTPUT_DIR, '6d_ChainOfThought_SimplePromptFullScale')
+OUTPUT_DIR_6D_FACTORIAL = os.path.join(OUTPUT_DIR, '6d_ChainOfThought_Factorial')  # full-scale 2x2 factorial (200-sample val set)
 OUTPUT_DIR_6E = os.path.join(OUTPUT_DIR, '6e_KeywordAugmented')
 OUTPUT_DIR_6F = os.path.join(OUTPUT_DIR, '6f_KeywordAugmentedCoT')
 OUTPUT_DIR_6G1 = os.path.join(OUTPUT_DIR, '6g1_BaseModel_ZeroShot')
@@ -174,9 +197,11 @@ OUTPUT_DIR_6G2 = os.path.join(OUTPUT_DIR, '6g2_BaseModel_CoT')
 OUTPUT_DIR_7_MULTI = os.path.join(OUTPUT_DIR, '7_MultiEvalAnalysis')
 OUTPUT_DIR_8_BEST = os.path.join(OUTPUT_DIR, '8_BestEvalAnalysis')
 OUTPUT_DIR_9_ERROR = os.path.join(OUTPUT_DIR, '9_ErrorAnalysis')
-OUTPUT_DIR_12_PATIENT_OVERLAP = os.path.join(OUTPUT_DIR, '12_PatientOverlapAnalysis')
+OUTPUT_DIR_11_PATIENT_OVERLAP = os.path.join(OUTPUT_DIR, '11_PatientOverlapAnalysis')
+OUTPUT_DIR_12_PSYCH_KEYWORDS = os.path.join(OUTPUT_DIR, '12_PsychKeywordsReproducibility')
 
-# Legacy aliases for backward compatibility (will be removed in future)
+# Aliases used by the evaluation scripts (6a-6g2); the analysis scripts
+# (7, 8, 9) use the OUTPUT_DIR_6* names directly. Both point to the same dirs.
 EVAL_OUTPUT_DIR_6A = OUTPUT_DIR_6A
 EVAL_OUTPUT_DIR_6B = OUTPUT_DIR_6B
 EVAL_OUTPUT_DIR_6C = OUTPUT_DIR_6C
@@ -243,12 +268,6 @@ CHUNK_SIZE = 2800
 
 # Overlap between chunks to avoid missing information at boundaries
 CHUNK_OVERLAP = 200
-
-# Text handling approach: "chunking" or "truncation"
-TEXT_HANDLING = "chunking"
-
-# Maximum tokens for single chunk (used when document fits in one chunk)
-MAX_INPUT_TOKENS = 2800
 
 
 # =============================================================================
@@ -450,9 +469,6 @@ PROJECT_CONFIG = {
     'train_data_path': TRAIN_DATA_PATH,
     'val_data_path': VAL_DATA_PATH,
     'test_data_path': TEST_DATA_PATH,
-    'train_truncated_path': TRAIN_TRUNCATED_PATH,
-    'val_truncated_path': VAL_TRUNCATED_PATH,
-    'test_truncated_path': TEST_TRUNCATED_PATH,
 
     # Model
     'base_model_name': BASE_MODEL_NAME,
@@ -467,7 +483,6 @@ PROJECT_CONFIG = {
     # Chunking parameters
     'chunk_size': CHUNK_SIZE,
     'chunk_overlap': CHUNK_OVERLAP,
-    'max_input_tokens': MAX_INPUT_TOKENS,
 
     # Generation
     'max_new_tokens': MAX_NEW_TOKENS,

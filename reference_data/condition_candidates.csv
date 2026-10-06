@@ -1,0 +1,126 @@
+term,source_icd10cm_category
+vascular dementia,F01
+vascular cognitive impairment,F01
+multi-infarct dementia,F01
+dementia,F02
+cognitive decline,F02
+dementia unspecified,F03
+memory loss,F03
+amnesia,F04
+amnestic disorder,F04
+memory impairment,F04
+delirium,F05
+acute confusional state,F05
+altered mental status,F05
+confusion,F06
+mental disorder due to medical condition,F06
+personality change,F07
+behavioral disturbance,F07
+unspecified mental disorder,F09
+alcohol use disorder,F10
+alcoholism,F10
+alcohol abuse,F10
+alcohol dependence,F10
+etoh abuse,F10
+opioid use disorder,F11
+opioid abuse,F11
+opioid dependence,F11
+cannabis use disorder,F12
+marijuana abuse,F12
+sedative use disorder,F13
+benzodiazepine abuse,F13
+cocaine use disorder,F14
+cocaine abuse,F14
+stimulant use disorder,F15
+amphetamine abuse,F15
+hallucinogen use disorder,F16
+nicotine dependence,F17
+tobacco use disorder,F17
+smoking,F17
+inhalant use disorder,F18
+polysubstance abuse,F19
+polysubstance use disorder,F19
+schizophrenia,F20
+psychosis,F20
+psychotic disorder,F20
+schizotypal disorder,F21
+delusional disorder,F22
+paranoia,F22
+brief psychotic disorder,F23
+shared psychotic disorder,F24
+schizoaffective disorder,F25
+unspecified psychotic disorder,F28
+unspecified psychosis,F29
+manic episode,F30
+mania,F30
+bipolar disorder,F31
+bipolar,F31
+major depressive disorder,F32
+depression,F32
+depressive episode,F32
+major depression recurrent,F33
+persistent depressive disorder,F34
+dysthymia,F34
+mood disorder,F39
+phobia,F40
+phobic anxiety,F40
+anxiety disorder,F41
+generalized anxiety disorder,F41
+panic disorder,F41
+anxiety,F41
+obsessive-compulsive disorder,F42
+ocd,F42
+acute stress reaction,F43
+adjustment disorder,F43
+post-traumatic stress disorder,F43
+ptsd,F43
+dissociative disorder,F44
+conversion disorder,F44
+somatoform disorder,F45
+somatization,F45
+nonpsychotic mental disorder,F48
+eating disorder,F50
+anorexia,F50
+bulimia,F50
+insomnia,F51
+sleep disorder,F51
+sexual dysfunction,F52
+postpartum depression,F53
+peripartum mood disorder,F53
+psychological factors affecting medical condition,F54
+substance abuse non-psychoactive,F55
+behavioral syndrome,F59
+personality disorder,F60
+borderline personality disorder,F60
+antisocial personality disorder,F60
+impulse control disorder,F63
+gender dysphoria,F64
+paraphilia,F65
+sexual disorder,F66
+adult personality disorder,F68
+unspecified personality disorder,F69
+intellectual disability mild,F70
+intellectual disability moderate,F71
+intellectual disability severe,F72
+intellectual disability profound,F73
+intellectual disability,F78
+unspecified intellectual disability,F79
+speech delay,F80
+language disorder,F80
+learning disability,F81
+developmental coordination disorder,F82
+pervasive developmental disorder,F84
+autism spectrum disorder,F84
+autism,F84
+developmental delay,F88
+unspecified developmental disorder,F89
+attention deficit hyperactivity disorder,F90
+adhd,F90
+conduct disorder,F91
+childhood emotional disorder,F93
+separation anxiety,F93
+reactive attachment disorder,F94
+tic disorder,F95
+tourette syndrome,F95
+behavioral disorder childhood,F98
+mental disorder not otherwise specified,F99

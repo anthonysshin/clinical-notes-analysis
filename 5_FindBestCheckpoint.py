@@ -28,16 +28,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Tuple, Optional, Any
+from typing import Dict, List, Tuple, Any
 
 # Import centralized config
 from config import (
     RANDOM_SEED, set_all_seeds,
     MAX_SEQ_LENGTH, CHUNK_SIZE, CHUNK_OVERLAP, MAX_NEW_TOKENS,
-    LOAD_IN_4BIT, TEMPERATURE,
     VAL_DATA_PATH, CHECKPOINT_DIR, FINAL_MODEL_DIR,
-    DEFAULT_MAX_SAMPLES, COLORS, apply_figure_style,
-    OUTPUT_DIR_5_CHECKPOINT, MIN_CHECKPOINT_STEP
+    apply_figure_style,
+    OUTPUT_DIR_5_CHECKPOINT, MIN_CHECKPOINT_STEP,
+    CHECKPOINT_DIR_SIMPLE, FINAL_MODEL_DIR_SIMPLE, BEST_CHECKPOINT_FILE_SIMPLE
 )
 
 # Set seeds for reproducibility
@@ -61,7 +61,7 @@ DEFAULT_CHECKPOINT_DIR = PROJECT_ROOT / CHECKPOINT_DIR
 DEFAULT_VAL_DATA_PATH = PROJECT_ROOT / VAL_DATA_PATH
 
 
-def get_best_checkpoint_path(require_exists: bool = True) -> str:
+def get_best_checkpoint_path(require_exists: bool = True, best_checkpoint_file=None) -> str:
     """
     Get the path to the best checkpoint.
 
@@ -73,6 +73,10 @@ def get_best_checkpoint_path(require_exists: bool = True) -> str:
     Args:
         require_exists: If True, raise FileNotFoundError if no valid checkpoint found.
                        If False, return default path even if it doesn't exist.
+        best_checkpoint_file: Override the config file to read (defaults to
+                       best_checkpoint.json, i.e. the main CoT model). Pass
+                       BEST_CHECKPOINT_FILE_SIMPLE (imported from config) to
+                       select the full-scale Simple-prompt model.
 
     Returns:
         Absolute path to the checkpoint directory
@@ -80,17 +84,19 @@ def get_best_checkpoint_path(require_exists: bool = True) -> str:
     Raises:
         FileNotFoundError: If require_exists=True and no valid checkpoint is found.
     """
+    checkpoint_file = Path(best_checkpoint_file) if best_checkpoint_file else BEST_CHECKPOINT_FILE
+
     # Try loading from config file first
-    if BEST_CHECKPOINT_FILE.exists():
+    if checkpoint_file.exists():
         try:
-            with open(BEST_CHECKPOINT_FILE, 'r') as f:
+            with open(checkpoint_file, 'r') as f:
                 config = json.load(f)
             checkpoint_path = config.get('checkpoint')
             if checkpoint_path and os.path.exists(checkpoint_path):
                 print(f"[checkpoint] Using best checkpoint: {Path(checkpoint_path).name} (Micro F1: {config.get('micro_f1', 'N/A'):.4f})")
                 return checkpoint_path
         except (json.JSONDecodeError, IOError) as e:
-            print(f"Warning: Could not load {BEST_CHECKPOINT_FILE}: {e}")
+            print(f"Warning: Could not load {checkpoint_file}: {e}")
 
     # Try environment variable
     env_checkpoint = os.environ.get('CHECKPOINT_PATH')
@@ -109,7 +115,7 @@ def get_best_checkpoint_path(require_exists: bool = True) -> str:
         raise FileNotFoundError(
             f"No valid checkpoint found.\n"
             f"Checked:\n"
-            f"  1. {BEST_CHECKPOINT_FILE} (not found or invalid)\n"
+            f"  1. {checkpoint_file} (not found or invalid)\n"
             f"  2. Environment variable CHECKPOINT_PATH (not set)\n"
             f"  3. Default path: {default_path} (not found)\n\n"
             f"Please run 4_FineTuning.py first to create a model checkpoint,\n"
@@ -169,7 +175,7 @@ def format_f_code(code: str) -> str:
 
 
 # Psychiatric F-code system prompt (CoT - must match training prompt)
-SYSTEM_PROMPT = '''Analyze the clinical text step by step to extract psychiatric F-codes (F00-F99).
+SYSTEM_PROMPT_COT = '''Analyze the clinical text step by step to extract psychiatric F-codes (F00-F99).
 
 STEP-BY-STEP PROCESS:
 
@@ -200,6 +206,20 @@ Step 3: SELECT most confident codes (maximum 5)
 
 Step 4: OUTPUT as JSON array only
 ["F32.9", "F17.210", "F41.9"]'''
+
+# "Simple" (non-CoT) system prompt - identical text to SYSTEM_PROMPT in
+# 6a_Eval_ZeroShotBaseline.py. Must match training prompt when evaluating the
+# --training-prompt simple checkpoints. Token count: ~30 tokens.
+SYSTEM_PROMPT_SIMPLE = '''Extract all psychiatric F-codes (F00-F99) from the clinical text.
+
+Respond with only the F-codes as a JSON array.
+
+Format response as:
+["F32.9", "F17.210"]'''
+
+# Selected in main() based on --training-prompt; defaults to CoT so importing
+# get_best_checkpoint_path() elsewhere is unaffected.
+SYSTEM_PROMPT = SYSTEM_PROMPT_COT
 
 
 class ChunkingCheckpointEvaluator:
@@ -388,7 +408,8 @@ class ChunkingCheckpointEvaluator:
             if (idx + 1) % 20 == 0:
                 print(f"    Progress: {idx + 1}/{len(val_df)}")
 
-            actual_codes = set([format_f_code(c) for c in str(row['f_codes_str']).split(',') if c.strip().startswith('F')])
+            raw_codes = [c for c in re.split(r'[,\s]+', str(row['f_codes_str'])) if c]
+            actual_codes = set([format_f_code(c) for c in raw_codes if c.strip().startswith('F')])
             predicted_codes, stats = self.generate_prediction(row['text'])
             predicted_codes = set(predicted_codes)
 
@@ -555,13 +576,21 @@ def visualize_checkpoint_results(results: Dict, output_dir: Path, total_steps: i
 
 
 def main():
+    global SYSTEM_PROMPT
+
     parser = argparse.ArgumentParser(description='Find best checkpoint for chunking approach')
-    parser.add_argument('--checkpoint-dir', type=str, default=str(DEFAULT_CHECKPOINT_DIR),
-                        help='Directory containing checkpoints')
+    parser.add_argument('--training-prompt', choices=['cot', 'simple'], default='cot',
+                        help="Which training-prompt condition to select a checkpoint for. "
+                             "'cot' (default) is the main reported model -- unchanged behavior, "
+                             "writes to best_checkpoint.json. 'simple' is the full-scale "
+                             "Simple-prompt model -- reads models/checkpoints_simple, evaluates "
+                             "with the matched Simple prompt, writes to best_checkpoint_simple.json.")
+    parser.add_argument('--checkpoint-dir', type=str, default=None,
+                        help='Directory containing checkpoints (default depends on --training-prompt)')
     parser.add_argument('--val-data', type=str, default=str(DEFAULT_VAL_DATA_PATH),
                         help='Path to validation data CSV')
-    parser.add_argument('--output-dir', type=str, default=OUTPUT_DIR_5_CHECKPOINT,
-                        help='Output directory for results')
+    parser.add_argument('--output-dir', type=str, default=None,
+                        help='Output directory for results (default depends on --training-prompt)')
     parser.add_argument('--val-samples', type=int, default=200,
                         help='Number of validation samples (default: 200)')
     parser.add_argument('--max-seq-length', type=int, default=MAX_SEQ_LENGTH,
@@ -574,13 +603,31 @@ def main():
                         help='Random seed')
     parser.add_argument('--min-checkpoint-step', type=int, default=MIN_CHECKPOINT_STEP,
                         help=f'Minimum checkpoint step to evaluate (default: {MIN_CHECKPOINT_STEP})')
+    parser.add_argument('--best-checkpoint-file', type=str, default=None,
+                        help='Override path to write the best-checkpoint JSON (default depends '
+                             'on --training-prompt). Use for ablation runs (e.g. a different '
+                             'epoch count) so the standard best_checkpoint(_simple).json is '
+                             'never overwritten.')
 
     args = parser.parse_args()
 
+    is_simple = args.training_prompt == 'simple'
+    SYSTEM_PROMPT = SYSTEM_PROMPT_SIMPLE if is_simple else SYSTEM_PROMPT_COT
+
+    checkpoint_dir = args.checkpoint_dir or (str(CHECKPOINT_DIR_SIMPLE) if is_simple else str(DEFAULT_CHECKPOINT_DIR))
+    output_dir_arg = args.output_dir or (str(OUTPUT_DIR_5_CHECKPOINT) + '_simple' if is_simple else OUTPUT_DIR_5_CHECKPOINT)
+    best_checkpoint_file = Path(args.best_checkpoint_file) if args.best_checkpoint_file else (
+        BEST_CHECKPOINT_FILE_SIMPLE if is_simple else BEST_CHECKPOINT_FILE)
+    final_model_path = str(FINAL_MODEL_DIR_SIMPLE) if is_simple else str(DEFAULT_CHECKPOINT_PATH)
+
+    print(f"\nTraining-prompt condition: {args.training_prompt.upper()}", flush=True)
+    print(f"Checkpoint dir: {checkpoint_dir}", flush=True)
+    print(f"Best-checkpoint file: {best_checkpoint_file}\n", flush=True)
+
     config = {
-        'checkpoint_dir': args.checkpoint_dir,
+        'checkpoint_dir': checkpoint_dir,
         'val_data_path': args.val_data,
-        'output_dir': args.output_dir,
+        'output_dir': output_dir_arg,
         'val_samples': args.val_samples,
         'max_seq_length': args.max_seq_length,
         'chunk_size': args.chunk_size,
@@ -588,11 +635,11 @@ def main():
         'max_new_tokens': MAX_NEW_TOKENS,
         'random_seed': args.random_seed,
         'min_checkpoint_step': args.min_checkpoint_step,
-        'final_model_path': str(DEFAULT_CHECKPOINT_PATH),
+        'final_model_path': final_model_path,
     }
 
     # Create output directory
-    output_dir = Path(args.output_dir)
+    output_dir = Path(output_dir_arg)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Find best checkpoint
@@ -617,7 +664,8 @@ def main():
     comparison_df.to_csv(csv_path, index=False)
     print(f"Comparison CSV saved to: {csv_path}")
 
-    # Save best checkpoint config to project root
+    # Save best checkpoint config (project root; separate file for the Simple condition
+    # so best_checkpoint.json for the main CoT model is never overwritten)
     best = results['best_checkpoint']
     best_config = {
         'checkpoint': best['checkpoint'],
@@ -627,16 +675,17 @@ def main():
         'micro_recall': best['micro_recall'],
         'num_samples': best['num_samples'],
         'approach': 'chunking',
+        'training_prompt_condition': args.training_prompt,
         'chunk_size': config['chunk_size'],
         'chunk_overlap': config['chunk_overlap'],
         'timestamp': best['timestamp']
     }
 
-    with open(BEST_CHECKPOINT_FILE, 'w') as f:
+    with open(best_checkpoint_file, 'w') as f:
         json.dump(best_config, f, indent=2)
 
     print(f"\n{'='*70}")
-    print(f"BEST CHECKPOINT SAVED TO: {BEST_CHECKPOINT_FILE}")
+    print(f"BEST CHECKPOINT SAVED TO: {best_checkpoint_file}")
     print(f"{'='*70}")
     print(f"  Checkpoint: {best['checkpoint_name']}")
     print(f"  Path: {best['checkpoint']}")

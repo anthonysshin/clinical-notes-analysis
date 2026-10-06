@@ -1,23 +1,19 @@
 #!/usr/bin/env python3
 """
-12_PatientOverlapAnalysis.py - Patient-Level Leakage Analysis (Reviewer 2, Comment 2)
+11_PatientOverlapAnalysis.py - Patient-Level Leakage Analysis
 
-Reviewer 2 noted that the train/val/test split (Supplementary Table S2) was performed
-at the encounter level, so the same patient (subject_id) can appear in more than one
-split. This script answers the reviewer's two requests without retraining:
+The train/val/test split was performed at the encounter level, so the same
+patient (subject_id) can appear in more than one split. This
+script quantifies that overlap and checks its effect on reported performance:
 
-  1. "Report the extent of patient overlap across splits."
-     -> Computes patient-level overlap counts/percentages between train/val/test.
+  1. Computes patient-level overlap counts/percentages between train/val/test.
 
-  2. "Ideally, repeat the main analyses using patient-disjoint splits. If this is
-     not feasible, the potential impact of patient overlap should be clearly
-     acknowledged as a limitation."
-     -> Full patient-disjoint re-split + retrain was judged infeasible before the
-        revision deadline (see reviewer response). Instead, this script re-scores
-        every already-completed evaluation strategy (6a-6g2) on the leak-free
-        subset of the test set -- the encounters whose patient does NOT appear in
-        train -- using the existing per-sample prediction outputs. This is a valid
-        patient-disjoint evaluation for those encounters, at no retraining cost.
+  2. A full patient-disjoint re-split and retrain was judged infeasible given
+     the cost of retraining every strategy. Instead, this script re-scores every
+     already-completed evaluation strategy (6a-6g2) on the leak-free subset of
+     the test set -- the encounters whose patient does NOT appear in train --
+     using the existing per-sample prediction outputs. This is a valid
+     patient-disjoint evaluation for those encounters, at no retraining cost.
      -> Also reports the F1 gap (patient-overlapping vs. patient-disjoint test
         encounters) with a paired bootstrap 95% CI, for each strategy, and a
         patient-clustered bootstrap CI for the headline Keyword+CoT result (the
@@ -28,13 +24,13 @@ Text handling: this script only reads existing data/eval outputs; no chunking,
 inference, or GPU is involved.
 
 Output:
-    outputs/12_PatientOverlapAnalysis/patient_overlap_stats.json
-    outputs/12_PatientOverlapAnalysis/per_strategy_overlap_gap.csv
-    outputs/12_PatientOverlapAnalysis/leak_free_vs_reported_summary.csv
-    outputs/12_PatientOverlapAnalysis/patient_overlap_gap.png
+    outputs/11_PatientOverlapAnalysis/patient_overlap_stats.json
+    outputs/11_PatientOverlapAnalysis/per_strategy_overlap_gap.csv
+    outputs/11_PatientOverlapAnalysis/leak_free_vs_reported_summary.csv
+    outputs/11_PatientOverlapAnalysis/patient_overlap_gap.png
 
 Usage:
-    python 12_PatientOverlapAnalysis.py
+    python 11_PatientOverlapAnalysis.py
 """
 
 import json
@@ -52,7 +48,7 @@ from matplotlib.patches import Patch
 from config import (
     RANDOM_SEED, set_all_seeds,
     TRAIN_DATA_PATH, VAL_DATA_PATH, TEST_DATA_PATH,
-    OUTPUT_DIR_12_PATIENT_OVERLAP,
+    OUTPUT_DIR_11_PATIENT_OVERLAP,
     STRATEGY_COLORS, apply_figure_style,
 )
 
@@ -195,11 +191,11 @@ def patient_clustered_bootstrap_ci(df, n_iter=N_BOOTSTRAP, seed=RANDOM_SEED):
 
 
 def main():
-    out_dir = Path(OUTPUT_DIR_12_PATIENT_OVERLAP)
+    out_dir = Path(OUTPUT_DIR_11_PATIENT_OVERLAP)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print("=" * 70)
-    print("PATIENT OVERLAP ANALYSIS (Reviewer 2, Comment 2)")
+    print("PATIENT OVERLAP ANALYSIS")
     print("=" * 70)
 
     train, val, test = load_split_patients()
@@ -231,8 +227,8 @@ def main():
 
         # Two distinct comparisons, each with its own matching CI:
         #  (1) overlap-only vs. disjoint-only patients (bigger gap)
-        #  (2) reported (full test set) vs. disjoint-only (smaller gap -- this is
-        #      the number actually quoted in the manuscript, e.g. 0.675 to 0.643)
+        #  (2) reported (full test set) vs. disjoint-only (smaller gap -- the
+        #      comparison reported in the manuscript and Supplementary Note 20)
         ci_lo, ci_hi = bootstrap_gap_ci(df, train_patients)
         rep_ci_lo, rep_ci_hi = bootstrap_reported_vs_disjoint_ci(df, train_patients)
 
@@ -290,7 +286,7 @@ def main():
 
     # Combined output
     full_report = {
-        'analysis': 'R2-2 patient overlap / patient-disjoint re-scoring',
+        'analysis': 'patient overlap / patient-disjoint re-scoring',
         'timestamp': datetime.now().isoformat(),
         'random_seed': RANDOM_SEED,
         'n_bootstrap_iterations': N_BOOTSTRAP,
@@ -322,16 +318,11 @@ def main():
         x = np.arange(len(labels))
         width = 0.35
         bar_colors = [STRATEGY_COLORS.get(r['strategy'], '#B0B0B0') for r in rows]
-        # Bake transparency into the FACE color only (not passed as `alpha=`), so the
-        # black edge stays fully opaque and identical for both groups. `alpha=` on
-        # ax.bar() dims the whole patch including its edge, which made the
-        # "Reported" bars' outline render as a lighter gray than the "Patient-disjoint"
-        # bars' solid black outline even though both used edgecolor='black'.
+        # Transparency applied to face color only, so the black edge stays fully
+        # opaque for both groups.
         reported_facecolors = [mcolors.to_rgba(c, alpha=0.55) for c in bar_colors]
-        # Bar color encodes STRATEGY (matches the palette used elsewhere in the paper).
-        # Group membership (full test set vs. unseen-patients-only) is encoded
-        # separately via edge style (dotted vs. solid), so the legend can show that
-        # distinction without implying a color meaning it doesn't have.
+        # Bar color encodes strategy; group (full test set vs. unseen-patients-only)
+        # is encoded separately via edge style (dotted vs. solid).
         ax.bar(x - width / 2, reported, width,
                color=reported_facecolors, edgecolor='black', linewidth=0.9, linestyle='-')
         ax.bar(x + width / 2, disjoint, width,

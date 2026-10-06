@@ -7,11 +7,11 @@ This script performs detailed error analysis on model predictions, including:
     2. Error categorization (perfect match, partial match, complete miss)
     3. Confusion matrix for top F-codes
     4. Common error patterns identification
-    5. Performance by code-frequency tier (Reviewer 1, Comment 6): whether
-       rare codes are systematically missed, broken down by how many
-       ground-truth test instances each code has
-    6. Chunk-count sensitivity (Reviewer 2, Comment 3): whether performance
-       differs between single-chunk documents (no label noise possible)
+    5. Performance by code-frequency tier: whether rare codes are
+       systematically missed, broken down by how many ground-truth test
+       instances each code has
+    6. Chunk-count sensitivity: whether performance differs between
+       single-chunk documents (no label noise possible)
        and multi-chunk documents (each chunk inherits the full
        document-level label set, so labels can be mismatched with a given
        chunk's content)
@@ -42,8 +42,8 @@ import warnings
 
 # Import centralized config for colors and style
 from config import (
-    COLORS, FIGURE_STYLE, apply_figure_style, get_category_color,
-    OUTPUT_DIR, OUTPUT_DIR_6F, OUTPUT_DIR_6D, OUTPUT_DIR_9_ERROR
+    COLORS, apply_figure_style,
+    OUTPUT_DIR_6F, OUTPUT_DIR_6D, OUTPUT_DIR_9_ERROR
 )
 
 warnings.filterwarnings('ignore')
@@ -284,14 +284,12 @@ class ErrorAnalyzer:
 
     def analyze_by_frequency_tier(self) -> Dict:
         """
-        Break down per-code performance by ground-truth frequency tier
-        (Reviewer 1, Comment 6): are rare codes systematically missed, and
-        does performance improve smoothly with frequency or drop off sharply
-        below some threshold?
+        Break down per-code performance by ground-truth frequency tier:
+        are rare codes systematically missed, and does performance improve
+        smoothly with frequency or drop off sharply below some threshold?
 
-        The rarest tier boundary (1-5 occurrences) matches the "100 codes
-        (74%) had five or fewer test instances" statement reported
-        elsewhere in the manuscript for the same population.
+        Breaks codes into four frequency tiers (rare, uncommon, moderate,
+        common) and reports aggregate and per-code F1 within each.
 
         Returns:
             Dictionary with per-tier code counts, aggregate (micro) F1,
@@ -368,9 +366,9 @@ class ErrorAnalyzer:
 
     def analyze_chunk_sensitivity(self, results_dir: str = None) -> Dict:
         """
-        Compare performance on single-chunk vs. multi-chunk samples
-        (Reviewer 2, Comment 3): every training chunk inherits the full
-        document-level label set, so a chunk may be trained against labels
+        Compare performance on single-chunk vs. multi-chunk samples.
+        Every training chunk inherits the full document-level label set,
+        so a chunk may be trained against labels
         it contains no textual evidence for. This label noise can only
         occur in multi-chunk documents; a single-chunk document's one chunk
         is the whole note, so its labels are never mismatched with its
@@ -633,8 +631,8 @@ class ErrorAnalyzer:
             fp_counter: False positive counts
             fn_counter: False negative counts
             confusion_patterns: Confusion pattern dictionary
-            frequency_tiers: Output of analyze_by_frequency_tier() (R1-6)
-            chunk_sensitivity: Output of analyze_chunk_sensitivity() (R2-3)
+            frequency_tiers: Output of analyze_by_frequency_tier()
+            chunk_sensitivity: Output of analyze_chunk_sensitivity()
         """
         print("\n" + "=" * 70)
         print("SAVING ERROR ANALYSIS REPORT")
@@ -735,10 +733,10 @@ class ErrorAnalyzer:
         # Analyze confusion patterns
         confusion_patterns = self.analyze_confusion_patterns()
 
-        # Performance by code-frequency tier (Reviewer 1, Comment 6)
+        # Performance by code-frequency tier
         frequency_tiers = self.analyze_by_frequency_tier()
 
-        # Chunk-count sensitivity (Reviewer 2, Comment 3)
+        # Chunk-count sensitivity
         chunk_sensitivity = self.analyze_chunk_sensitivity()
 
         # Create confusion matrix

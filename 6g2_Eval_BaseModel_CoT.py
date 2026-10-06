@@ -28,7 +28,6 @@ import argparse
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Tuple
-from collections import defaultdict
 
 # Import centralized config for reproducibility
 from config import (

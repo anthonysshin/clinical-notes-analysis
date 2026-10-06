@@ -40,13 +40,12 @@ import seaborn as sns
 import argparse
 from pathlib import Path
 from collections import Counter
-from datetime import datetime
 import warnings
 
 # Import centralized config for reproducibility, colors, and figure style
 from config import (
-    RANDOM_SEED, set_all_seeds, COLORS, FIGURE_STYLE, apply_figure_style,
-    DATA_DIR, OUTPUT_DIR_3_EDA, CHUNK_SIZE, CHUNK_OVERLAP, MAX_TRAIN_SAMPLES, BASE_MODEL_NAME
+    RANDOM_SEED, set_all_seeds, COLORS, apply_figure_style,
+    DATA_DIR, OUTPUT_DIR_3_EDA, CHUNK_SIZE, CHUNK_OVERLAP, BASE_MODEL_NAME
 )
 
 # Import tokenizer for token counting
@@ -548,19 +547,6 @@ class MIMICDatasetEDA:
             'F19': 'Multiple/Other'
         }
 
-        # Severity patterns (4th character after decimal)
-        severity_patterns = {
-            '1': 'Abuse (.1x)',
-            '2': 'Dependence (.2x)',
-            '9': 'Unspecified (.9x)'
-        }
-
-        # Remission patterns (5th character)
-        remission_patterns = {
-            '0': 'Active (x.x0)',
-            '1': 'In Remission (x.x1)'
-        }
-
         # Collect substance use codes
         substance_codes = {}
         for code, count in fcode_counter.items():
@@ -708,7 +694,7 @@ class MIMICDatasetEDA:
             try:
                 codes = json.loads(output)
                 chunked_fcodes.extend(codes)
-            except:
+            except json.JSONDecodeError:
                 pass
 
         chunked_fcode_counter = Counter(chunked_fcodes)

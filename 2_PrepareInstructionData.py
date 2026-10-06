@@ -316,7 +316,6 @@ def main():
     print("\n[6/6] Saving dataset info...")
     dataset_info = {
         'created_at': datetime.now().isoformat(),
-        'pipeline_version': 'CNA_Chunking_1222_2025',
         'approach': 'Chunking (overlapping chunks with union aggregation)',
         'description': f'Documents split into {args.chunk_size} token chunks with {args.chunk_overlap} overlap',
         'source_files': {

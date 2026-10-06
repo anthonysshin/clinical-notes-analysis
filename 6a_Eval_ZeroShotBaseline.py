@@ -19,6 +19,7 @@ os.environ["UNSLOTH_STABLE_DOWNLOADS"] = "1"
 
 import sys
 import json
+import argparse
 import pandas as pd
 import torch
 import re
@@ -33,6 +34,21 @@ from config import (
     MAX_NEW_TOKENS, LOAD_IN_4BIT, TEMPERATURE, DEFAULT_MAX_SAMPLES,
     EVAL_OUTPUT_DIR_6A
 )
+
+_arg_parser = argparse.ArgumentParser(description='Evaluate Zero-Shot Baseline strategy with chunking')
+_arg_parser.add_argument('--checkpoint-path', type=str, default=None,
+                          help="Override the checkpoint to evaluate, bypassing best_checkpoint.json. "
+                               "Use for ablation runs (e.g. a differently-trained model).")
+_arg_parser.add_argument('--test-data-path', type=str, default=None,
+                          help="Override the evaluation data CSV (default: the 1,000-sample test "
+                               "set). Pass config.VAL_DATA_PATH to use the 200-sample validation set.")
+_arg_parser.add_argument('--max-samples', type=int, default=None,
+                          help="Override the number of samples evaluated (default: "
+                               f"{DEFAULT_MAX_SAMPLES}).")
+_arg_parser.add_argument('--output-dir', type=str, default=None,
+                          help="Override the output directory. Use for ablation runs so results "
+                               "are not written into the standard Strategy 6a directory.")
+_args, _ = _arg_parser.parse_known_args()
 
 # Set random seeds for reproducibility
 set_all_seeds(RANDOM_SEED)
@@ -58,14 +74,14 @@ def format_f_code(code: str) -> str:
 
 # Automatically get best checkpoint (from best_checkpoint.json or default)
 CONFIG = {
-    'checkpoint_path': get_best_checkpoint_path(),
+    'checkpoint_path': _args.checkpoint_path or get_best_checkpoint_path(),
     'max_seq_length': MAX_SEQ_LENGTH,
     'chunk_size': CHUNK_SIZE,
     'chunk_overlap': CHUNK_OVERLAP,
     'max_new_tokens': MAX_NEW_TOKENS,
-    'max_samples': DEFAULT_MAX_SAMPLES,
-    'test_data_path': TEST_DATA_PATH,
-    'output_dir': EVAL_OUTPUT_DIR_6A,
+    'max_samples': _args.max_samples if _args.max_samples is not None else DEFAULT_MAX_SAMPLES,
+    'test_data_path': _args.test_data_path or TEST_DATA_PATH,
+    'output_dir': _args.output_dir or EVAL_OUTPUT_DIR_6A,
     'load_in_4bit': LOAD_IN_4BIT,
     'temperature': TEMPERATURE,
     'random_seed': RANDOM_SEED
@@ -268,7 +284,8 @@ class ZeroShotBaselineEvaluator:
     def parse_actual_codes(self, codes_str: str) -> List[str]:
         if pd.isna(codes_str) or codes_str == '':
             return []
-        codes = [format_f_code(code) for code in str(codes_str).split(',')]
+        raw_codes = [c for c in re.split(r'[,\s]+', str(codes_str)) if c]
+        codes = [format_f_code(code) for code in raw_codes]
         return [code for code in codes if code.startswith('F')]
 
     def calculate_metrics(self, actual: List[str], predicted: List[str]) -> Dict[str, float]:

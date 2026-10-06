@@ -21,14 +21,28 @@ Token Allocation per Chunk (max_seq_length = 4096):
   Buffer:                 ~616 tokens
   TOTAL:                  4096 tokens
 
+Training prompt condition (--training-prompt):
+    cot     (default) Step-by-step CoT system prompt (~550 tokens). This is the
+             prompt used for the main fine-tuned model reported throughout the paper.
+             Writes to models/checkpoints and models/final_model (unchanged paths).
+    simple   Short, non-CoT system prompt (~30 tokens, identical text to the
+             SYSTEM_PROMPT in 6a_Eval_ZeroShotBaseline.py). Used to compare the
+             CoT vs. simple training prompt under an otherwise identical
+             training configuration. Writes to models/checkpoints_simple and
+             models/final_model_simple so the main CoT-trained model is
+             untouched. Both conditions use the SAME random seed, so both
+             train on the identical sample subset -- only the system prompt
+             differs.
+
 Usage:
-    python 4_FineTuning.py
+    python 4_FineTuning.py                          # main CoT model (unchanged default)
+    python 4_FineTuning.py --training-prompt simple  # full-scale Simple-prompt run
 """
 
 import os
 os.environ["UNSLOTH_STABLE_DOWNLOADS"] = "1"
 
-import sys
+import argparse
 import random
 import torch
 import json
@@ -43,20 +57,52 @@ from datasets import Dataset
 
 # Import centralized config for reproducibility
 from config import (
-    RANDOM_SEED, set_all_seeds, BASE_MODEL_NAME,
+    RANDOM_SEED, set_all_seeds, get_package_versions, BASE_MODEL_NAME,
     MAX_SEQ_LENGTH, LOAD_IN_4BIT, CHUNK_SIZE, CHUNK_OVERLAP, MAX_NEW_TOKENS,
     LORA_R, LORA_ALPHA, LORA_DROPOUT,
     NUM_EPOCHS, MAX_TRAIN_SAMPLES, TRAIN_BATCH_SIZE, GRADIENT_ACCUMULATION_STEPS,
     LEARNING_RATE, WARMUP_STEPS, SAVE_STEPS, SAVE_TOTAL_LIMIT,
-    TRAIN_CHUNKED_PATH, CHECKPOINT_DIR, FINAL_MODEL_DIR
+    TRAIN_CHUNKED_PATH, CHECKPOINT_DIR, FINAL_MODEL_DIR,
+    CHECKPOINT_DIR_SIMPLE, FINAL_MODEL_DIR_SIMPLE
 )
 
-# Set random seeds for reproducibility
+# Set random seeds for reproducibility (BEFORE parsing args, so the 20k-sample
+# subset drawn in load_chunked_data() is identical across --training-prompt values)
 set_all_seeds(RANDOM_SEED)
+
+parser = argparse.ArgumentParser(description='Fine-tune GPT-OSS 20B with chunking approach')
+parser.add_argument('--training-prompt', choices=['cot', 'simple'], default='cot',
+                     help="System prompt used during training. 'cot' (default) reproduces "
+                          "the main reported model. 'simple' is the full-scale Simple-prompt "
+                          "run (non-CoT prompt, separate output dirs).")
+parser.add_argument('--epochs', type=int, default=None,
+                     help="Override the number of training epochs (default: config.NUM_EPOCHS, "
+                          "currently 5). Used for ablations, e.g. a reduced-epoch Simple-prompt "
+                          "check. When set to a value other than the default, the 'simple' "
+                          "checkpoint/output directories get a '_{epochs}epoch' suffix so the "
+                          "5-epoch run's checkpoints are never overwritten.")
+parser.add_argument('--batch-size', type=int, default=None,
+                     help="Override per-device train batch size (default: config.TRAIN_BATCH_SIZE, "
+                          "currently 1). Increasing this improves GPU utilization at the cost of "
+                          "more VRAM per step.")
+parser.add_argument('--grad-accum-steps', type=int, default=None,
+                     help="Override gradient accumulation steps (default: "
+                          "config.GRADIENT_ACCUMULATION_STEPS, currently 4). Effective batch size "
+                          "= batch-size * grad-accum-steps.")
+args, _ = parser.parse_known_args()
+
+EPOCHS = args.epochs if args.epochs is not None else NUM_EPOCHS
+EPOCH_SUFFIX = '' if EPOCHS == NUM_EPOCHS else f'_{EPOCHS}epoch'
+BATCH_SIZE = args.batch_size if args.batch_size is not None else TRAIN_BATCH_SIZE
+GRAD_ACCUM_STEPS = args.grad_accum_steps if args.grad_accum_steps is not None else GRADIENT_ACCUMULATION_STEPS
 
 print("=" * 80, flush=True)
 print("GPT-OSS 20B Fine-tuning with CHUNKING Approach", flush=True)
 print("Overlapping chunks (2800 tokens, 200 overlap) | Output: JSON array only", flush=True)
+print(f"Training prompt condition: {args.training_prompt.upper()}", flush=True)
+print(f"Epochs: {EPOCHS}", flush=True)
+print(f"Batch size: {BATCH_SIZE} | Grad accum steps: {GRAD_ACCUM_STEPS} | "
+      f"Effective batch size: {BATCH_SIZE * GRAD_ACCUM_STEPS}", flush=True)
 print("=" * 80, flush=True)
 
 # TRAINING CONFIGURATION
@@ -68,8 +114,8 @@ CONFIG = {
 
     # Data paths - USE CHUNKED JSON DATA
     'train_data_path': TRAIN_CHUNKED_PATH,
-    'output_dir': FINAL_MODEL_DIR,
-    'checkpoint_dir': CHECKPOINT_DIR,
+    'output_dir': FINAL_MODEL_DIR if args.training_prompt == 'cot' else FINAL_MODEL_DIR_SIMPLE + EPOCH_SUFFIX,
+    'checkpoint_dir': CHECKPOINT_DIR if args.training_prompt == 'cot' else CHECKPOINT_DIR_SIMPLE + EPOCH_SUFFIX,
 
     # Chunking settings (from config)
     'chunk_size': CHUNK_SIZE,              # 2800 tokens
@@ -78,10 +124,10 @@ CONFIG = {
 
     # Training parameters
     'max_samples': MAX_TRAIN_SAMPLES,      # 20,000
-    'num_train_epochs': NUM_EPOCHS,        # 5 epochs
+    'num_train_epochs': EPOCHS,
     'max_steps': -1,
-    'per_device_train_batch_size': TRAIN_BATCH_SIZE,  # 1 (32GB VRAM)
-    'gradient_accumulation_steps': GRADIENT_ACCUMULATION_STEPS,  # 4 (effective batch = 4)
+    'per_device_train_batch_size': BATCH_SIZE,
+    'gradient_accumulation_steps': GRAD_ACCUM_STEPS,
     'learning_rate': LEARNING_RATE,        # 2e-4
     'warmup_steps': WARMUP_STEPS,          # 100
     'logging_steps': 100,
@@ -98,7 +144,7 @@ CONFIG = {
 
 # Psychiatric F-code system prompt (CoT - must match 6d evaluation)
 # Token count: ~550 tokens
-SYSTEM_PROMPT = '''Analyze the clinical text step by step to extract psychiatric F-codes (F00-F99).
+SYSTEM_PROMPT_COT = '''Analyze the clinical text step by step to extract psychiatric F-codes (F00-F99).
 
 STEP-BY-STEP PROCESS:
 
@@ -129,6 +175,18 @@ Step 3: SELECT most confident codes (maximum 5)
 
 Step 4: OUTPUT as JSON array only
 ["F32.9", "F17.210", "F41.9"]'''
+
+# "Simple" (non-CoT) system prompt - identical text to SYSTEM_PROMPT in
+# 6a_Eval_ZeroShotBaseline.py, used only for the --training-prompt simple
+# run. Token count: ~30 tokens.
+SYSTEM_PROMPT_SIMPLE = '''Extract all psychiatric F-codes (F00-F99) from the clinical text.
+
+Respond with only the F-codes as a JSON array.
+
+Format response as:
+["F32.9", "F17.210"]'''
+
+SYSTEM_PROMPT = SYSTEM_PROMPT_COT if args.training_prompt == 'cot' else SYSTEM_PROMPT_SIMPLE
 
 
 def load_chunked_data(config):
@@ -431,6 +489,7 @@ def main():
     with open(config_path, 'w') as f:
         json.dump({
             'approach': 'Chunking',
+            'training_prompt_condition': args.training_prompt,
             'description': f'Overlapping chunks ({CONFIG["chunk_size"]} tokens, {CONFIG["chunk_overlap"]} overlap)',
             'output_format': 'JSON array (F-codes only)',
             'chunking': True,
@@ -444,6 +503,7 @@ def main():
                 'training_examples': len(dataset),
                 'actual_steps': trainer_stats.metrics.get('train_steps', None),
             },
+            'package_versions': get_package_versions(),
             'timestamp': datetime.now().isoformat(),
         }, f, indent=2)
 
@@ -460,7 +520,8 @@ def main():
     print(f"Final loss: {trainer_stats.metrics.get('train_loss', 'N/A')}", flush=True)
     print(f"\nCheckpoints saved to: {CONFIG['checkpoint_dir']}/", flush=True)
     print(f"Final model saved to: {CONFIG['output_dir']}/", flush=True)
-    print(f"\nNext step: Run 5_FindBestCheckpoint.py to select best checkpoint", flush=True)
+    next_step_flag = "" if args.training_prompt == 'cot' else " --training-prompt simple"
+    print(f"\nNext step: Run 5_FindBestCheckpoint.py{next_step_flag} to select best checkpoint", flush=True)
     print("=" * 80, flush=True)
 
     return 0

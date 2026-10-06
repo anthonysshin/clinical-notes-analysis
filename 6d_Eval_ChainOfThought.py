@@ -17,21 +17,88 @@ Chunking Strategy:
 Checkpoint Selection:
     Automatically uses best checkpoint from best_checkpoint.json (created by 5_FindBestCheckpoint.py).
     Override with environment variable: CHECKPOINT_PATH=/path/to/checkpoint
+
+Training-prompt condition (--training-prompt):
+    cot     (default) Matched-prompt evaluation of the main reported model.
+             Unchanged behavior: reads best_checkpoint.json, writes to
+             outputs/6d_ChainOfThought/.
+    simple   Matched-prompt evaluation of the full-scale Simple-training-prompt
+             model (see 4_FineTuning.py
+             --training-prompt simple). Reads best_checkpoint_simple.json,
+             evaluates with the Simple (non-CoT) prompt, writes to
+             outputs/6d_ChainOfThought_SimplePromptFullScale/. Directly
+             comparable to this script's default ('cot') output, since both
+             are the matched training-prompt/eval-prompt cell for their
+             respective condition.
+
+Eval-prompt condition (--eval-prompt):
+    Independent of --training-prompt: selects which system prompt is used
+    at inference time. Defaults to whatever --training-prompt is set to
+    (unchanged, matched-prompt behavior). Set it to the opposite value to
+    produce a mismatched training/eval cell.
+
+Factorial mode (--factorial):
+    Evaluates the training-prompt x eval-prompt 2x2 design on the
+    200-sample MIMIC-IV validation set instead of the 1,000-sample test
+    set, and writes to
+    outputs/6d_ChainOfThought_Factorial/{train}Train_{eval}Eval/. Combine
+    with --training-prompt and --eval-prompt to produce all four cells:
+        --training-prompt cot    --eval-prompt cot    --factorial
+        --training-prompt cot    --eval-prompt simple --factorial
+        --training-prompt simple --eval-prompt cot    --factorial
+        --training-prompt simple --eval-prompt simple --factorial
+    Without --factorial, behavior is unchanged (1,000-sample test set,
+    original output directories).
 """
 
 import os
 os.environ["UNSLOTH_STABLE_DOWNLOADS"] = "1"
 
+import argparse
+
 # Import centralized config for reproducibility and settings
 from config import (
-    RANDOM_SEED, set_all_seeds, TEST_DATA_PATH,
+    RANDOM_SEED, set_all_seeds, get_package_versions,
+    TEST_DATA_PATH, VAL_DATA_PATH, VAL_SAMPLES,
     MAX_SEQ_LENGTH, CHUNK_SIZE, CHUNK_OVERLAP,
     MAX_NEW_TOKENS, LOAD_IN_4BIT, TEMPERATURE, DEFAULT_MAX_SAMPLES,
-    EVAL_OUTPUT_DIR_6D
+    EVAL_OUTPUT_DIR_6D, OUTPUT_DIR_6D_SIMPLE, OUTPUT_DIR_6D_FACTORIAL,
+    BEST_CHECKPOINT_FILE_SIMPLE
 )
 
 # Set random seeds for reproducibility
 set_all_seeds(RANDOM_SEED)
+
+_arg_parser = argparse.ArgumentParser(description='Evaluate Chain-of-Thought strategy with chunking')
+_arg_parser.add_argument('--training-prompt', choices=['cot', 'simple'], default='cot',
+                          help="'cot' (default) = main reported model, unchanged behavior. "
+                               "'simple' = full-scale evaluation of the Simple-trained model.")
+_arg_parser.add_argument('--eval-prompt', choices=['cot', 'simple'], default=None,
+                          help="System prompt used at inference. Defaults to --training-prompt "
+                               "(matched-prompt evaluation, unchanged behavior). Set to the "
+                               "opposite value for a mismatched training/eval cell.")
+_arg_parser.add_argument('--factorial', action='store_true',
+                          help="Evaluate on the 200-sample MIMIC-IV validation set instead of "
+                               "the 1,000-sample test set, writing to a separate "
+                               "outputs/6d_ChainOfThought_Factorial/ subdirectory.")
+_arg_parser.add_argument('--checkpoint-path', type=str, default=None,
+                          help="Override the checkpoint to evaluate, bypassing "
+                               "best_checkpoint(_simple).json. Use for ablation runs (e.g. a "
+                               "different epoch count).")
+_arg_parser.add_argument('--output-dir', type=str, default=None,
+                          help="Override the output directory. Use for ablation runs so results "
+                               "are not written into the standard factorial cell directories.")
+_arg_parser.add_argument('--val-samples', type=int, default=None,
+                          help="Override the number of samples evaluated (default: 200 with "
+                               "--factorial, else the standard test-set sample count).")
+_arg_parser.add_argument('--test-data-path', type=str, default=None,
+                          help="Override the evaluation data CSV entirely (default: the standard "
+                               "test or validation set). Use to evaluate on an external dataset, "
+                               "e.g. the UIC test set for cross-institutional transfer.")
+_args, _ = _arg_parser.parse_known_args()
+IS_SIMPLE_CONDITION = _args.training_prompt == 'simple'
+_EVAL_PROMPT = _args.eval_prompt if _args.eval_prompt is not None else _args.training_prompt
+IS_SIMPLE_EVAL_PROMPT = _EVAL_PROMPT == 'simple'
 
 import sys
 import json
@@ -61,23 +128,36 @@ def format_f_code(code: str) -> str:
     return code
 
 
-# Automatically get best checkpoint (from best_checkpoint.json or default)
+# Automatically get best checkpoint. Default ('cot') reads best_checkpoint.json;
+# 'simple' reads best_checkpoint_simple.json.
+if _args.factorial:
+    _factorial_dir = os.path.join(
+        OUTPUT_DIR_6D_FACTORIAL,
+        f"{_args.training_prompt}Train_{_EVAL_PROMPT}Eval"
+    )
+
 CONFIG = {
-    'checkpoint_path': get_best_checkpoint_path(),
+    'checkpoint_path': _args.checkpoint_path or get_best_checkpoint_path(
+        best_checkpoint_file=BEST_CHECKPOINT_FILE_SIMPLE if IS_SIMPLE_CONDITION else None
+    ),
     'max_seq_length': MAX_SEQ_LENGTH,
     'chunk_size': CHUNK_SIZE,              # 2800 tokens per chunk
     'chunk_overlap': CHUNK_OVERLAP,        # 200 tokens overlap
     'max_new_tokens': MAX_NEW_TOKENS,      # 100 tokens for JSON array output
-    'max_samples': DEFAULT_MAX_SAMPLES,
-    'test_data_path': TEST_DATA_PATH,
-    'output_dir': EVAL_OUTPUT_DIR_6D,
+    'max_samples': _args.val_samples if _args.val_samples is not None else (
+        VAL_SAMPLES if _args.factorial else DEFAULT_MAX_SAMPLES),
+    'test_data_path': _args.test_data_path or (VAL_DATA_PATH if _args.factorial else TEST_DATA_PATH),
+    'output_dir': _args.output_dir or (
+        _factorial_dir if _args.factorial else
+        (OUTPUT_DIR_6D_SIMPLE if IS_SIMPLE_CONDITION else EVAL_OUTPUT_DIR_6D)
+    ),
     'load_in_4bit': LOAD_IN_4BIT,
     'temperature': TEMPERATURE,
     'random_seed': RANDOM_SEED
 }
 
 # Psychiatric F-code system prompt (CoT - MUST MATCH training prompt in 4_FineTuning.py)
-SYSTEM_PROMPT = '''Analyze the clinical text step by step to extract psychiatric F-codes (F00-F99).
+SYSTEM_PROMPT_COT = '''Analyze the clinical text step by step to extract psychiatric F-codes (F00-F99).
 
 STEP-BY-STEP PROCESS:
 
@@ -109,6 +189,18 @@ Step 3: SELECT most confident codes (maximum 5)
 Step 4: OUTPUT as JSON array only
 ["F32.9", "F17.210", "F41.9"]'''
 
+# "Simple" (non-CoT) system prompt - identical text to SYSTEM_PROMPT in
+# 6a_Eval_ZeroShotBaseline.py. Must match the Simple training prompt in
+# 4_FineTuning.py --training-prompt simple. Token count: ~30 tokens.
+SYSTEM_PROMPT_SIMPLE = '''Extract all psychiatric F-codes (F00-F99) from the clinical text.
+
+Respond with only the F-codes as a JSON array.
+
+Format response as:
+["F32.9", "F17.210"]'''
+
+SYSTEM_PROMPT = SYSTEM_PROMPT_SIMPLE if IS_SIMPLE_EVAL_PROMPT else SYSTEM_PROMPT_COT
+
 
 class ChainOfThoughtEvaluator:
     def __init__(self, config: dict):
@@ -123,7 +215,7 @@ class ChainOfThoughtEvaluator:
         print(f"\n{'='*80}")
         print(f"Strategy 6d: CHAIN-OF-THOUGHT with CHUNKING")
         print(f"Text Handling: Chunking ({self.config['chunk_size']} tokens, {self.config['chunk_overlap']} overlap)")
-        print(f"Aggregation: Union | CoT: YES | Mappings: YES")
+        print(f"Aggregation: Union | Eval prompt: {_EVAL_PROMPT.upper()} | CoT: {not IS_SIMPLE_EVAL_PROMPT} | Mappings: {not IS_SIMPLE_EVAL_PROMPT}")
         print(f"Checkpoint: {checkpoint_path}")
         print(f"{'='*80}\n", flush=True)
 
@@ -309,7 +401,10 @@ class ChainOfThoughtEvaluator:
     def parse_actual_codes(self, codes_str: str) -> List[str]:
         if pd.isna(codes_str) or codes_str == '':
             return []
-        codes = [format_f_code(code) for code in str(codes_str).split(',')]
+        # Split on comma and/or whitespace: MIMIC uses "F32.9, F41.9",
+        # UIC uses "F29 R45.851" (space-separated, no commas).
+        raw_codes = [c for c in re.split(r'[,\s]+', str(codes_str)) if c]
+        codes = [format_f_code(code) for code in raw_codes]
         return [code for code in codes if code.startswith('F')]
 
     def calculate_metrics(self, actual: List[str], predicted: List[str]) -> Dict[str, float]:
@@ -414,9 +509,15 @@ class ChainOfThoughtEvaluator:
             total_fp += metrics["fp"]
             total_fn += metrics["fn"]
 
+            def _as_id(value):
+                try:
+                    return int(value)
+                except (ValueError, TypeError):
+                    return str(value)
+
             result = {
-                "sample_id": int(row['hadm_id']),
-                "subject_id": int(row['subject_id']),
+                "sample_id": _as_id(row['hadm_id']),
+                "subject_id": _as_id(row['subject_id']),
                 "actual_codes": actual_codes,
                 "predicted_codes": prediction["predicted_codes"],
                 "num_chunks": prediction["extraction_stats"].get("num_chunks", 0),
@@ -505,19 +606,37 @@ class ChainOfThoughtEvaluator:
     def save_results(self, results: List[Dict], metrics: Dict[str, float]):
         timestamp = datetime.now().strftime('%Y%m%d_%H%M')
 
+        if _args.factorial:
+            strategy_name = f"6d_ChainOfThought_Factorial_{_args.training_prompt}Train_{_EVAL_PROMPT}Eval"
+            strategy_description = (
+                f"2x2 factorial design: {_args.training_prompt}-trained "
+                f"model evaluated with the {_EVAL_PROMPT} prompt, on the 200-sample "
+                f"validation set."
+            )
+        elif IS_SIMPLE_CONDITION:
+            strategy_name = "6d_ChainOfThought_SimplePromptFullScale"
+            strategy_description = "Matched-prompt eval of full-scale Simple-trained model"
+        else:
+            strategy_name = "6d_ChainOfThought"
+            strategy_description = "Chain-of-thought with chunking (union aggregation)"
+
         evaluation_report = {
             "evaluation_info": {
                 "timestamp": datetime.now().isoformat(),
-                "strategy": "6d_ChainOfThought",
-                "strategy_description": "Chain-of-thought with chunking (union aggregation)",
+                "strategy": strategy_name,
+                "training_prompt_condition": _args.training_prompt,
+                "eval_prompt_condition": _EVAL_PROMPT,
+                "factorial_mode": _args.factorial,
+                "strategy_description": strategy_description,
                 "text_handling": "chunking_union",
                 "chunk_size": self.config['chunk_size'],
                 "chunk_overlap": self.config['chunk_overlap'],
-                "cot_reasoning": True,
-                "fcode_mappings": True,
+                "cot_reasoning": not IS_SIMPLE_EVAL_PROMPT,
+                "fcode_mappings": not IS_SIMPLE_EVAL_PROMPT,
                 "checkpoint_path": self.config['checkpoint_path'],
                 "max_new_tokens": self.config['max_new_tokens'],
                 "max_samples": self.config['max_samples'],
+                "package_versions": get_package_versions(),
             },
             "configuration": self.config,
             "performance_metrics": metrics,
@@ -577,7 +696,7 @@ def main():
     print("\n" + "=" * 80)
     print("EVALUATION STRATEGY 6d: CHAIN-OF-THOUGHT with CHUNKING")
     print(f"Text Handling: Chunking ({CONFIG['chunk_size']} tokens, {CONFIG['chunk_overlap']} overlap)")
-    print("Aggregation: Union | CoT: YES | Mappings: YES")
+    print(f"Aggregation: Union | Eval prompt: {_EVAL_PROMPT.upper()} | CoT: {not IS_SIMPLE_EVAL_PROMPT} | Mappings: {not IS_SIMPLE_EVAL_PROMPT}")
     print("=" * 80)
 
     evaluator = ChainOfThoughtEvaluator(CONFIG)

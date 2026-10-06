@@ -60,6 +60,7 @@ data/
 *.parquet
 *.json
 !config.json
+!reference_data/*.csv
 
 # Raw MIMIC-IV data
 raw_data/
@@ -137,9 +138,19 @@ deprecated/
 # =============================================================================
 # Project-Specific Exclusions
 # =============================================================================
-# PLM-ICD replication (separate baseline)
-plm_icd/
-PLM_ICD_REPLICATION.md
+# UIC external validation script (proprietary data paths)
+15_UIC_Bootstrap.py
+
+# Experimental fine-tuning variants (not part of main pipeline)
+4_FineTuning_Extended_*.py
+4_FineTuning_Resume.py
+
+# Internal manuscript-revision verification (not a standalone public script)
+16_FactorialReplication.py
+
+# Shell pipeline scripts (contain local paths)
+run_pipeline*.sh
+run_reeval*.sh
 
 # SLURM job scripts (HPC-specific)
 slurm_scripts/
@@ -150,6 +161,13 @@ CLAUDE.md
 
 # Manuscript drafts
 manuscript_*.txt
+
+# Confidential peer-review material and session notes
+old_session_prompts.md
+_reviewer_response_drafts/
+
+# Detailed results (numbers may drift ahead of the published manuscript)
+RESULTS.md
 
 # Unsloth cache
 unsloth_compiled_cache/

@@ -32,6 +32,7 @@ set_all_seeds(RANDOM_SEED)
 
 import sys
 import json
+import argparse
 import pandas as pd
 import torch
 import re
@@ -59,6 +60,11 @@ def format_f_code(code: str) -> str:
 
 
 # Automatically get best checkpoint (from best_checkpoint.json or default)
+_arg_parser = argparse.ArgumentParser()
+_arg_parser.add_argument('--output-dir', type=str, default=None,
+                          help='Override the output directory (e.g. for a PSYCH_KEYWORDS ablation run).')
+_args, _ = _arg_parser.parse_known_args()
+
 # KEYWORD EXTRACTION Configuration
 # Token Allocation (max_seq_length = 4096):
 #   System Prompt (mappings):  ~350 tokens
@@ -73,7 +79,7 @@ CONFIG = {
     'max_new_tokens': MAX_NEW_TOKENS,
     'max_samples': DEFAULT_MAX_SAMPLES,
     'test_data_path': TEST_DATA_PATH,
-    'output_dir': EVAL_OUTPUT_DIR_6E,
+    'output_dir': _args.output_dir or EVAL_OUTPUT_DIR_6E,
     'load_in_4bit': LOAD_IN_4BIT,
     'temperature': TEMPERATURE,
     'random_seed': RANDOM_SEED
@@ -81,38 +87,60 @@ CONFIG = {
 
 # PSYCH_KEYWORDS for psychiatric content extraction
 PSYCH_KEYWORDS = [
-    # F-codes (37 codes covering ~80% of occurrences)
+    # F-codes (90% cumulative training-set coverage)
     'F01.50', 'F02.80', 'F02.81', 'F03.90', 'F03.91', 'F05', 'F10.10', 'F10.11',
-    'F10.20', 'F10.21', 'F11.10', 'F11.20', 'F12.10', 'F14.10', 'F17.200', 'F17.210',
-    'F20.0', 'F20.9', 'F25.9', 'F31.81', 'F31.9', 'F32.3', 'F32.9', 'F33.2', 'F39',
-    'F40.240', 'F41.0', 'F41.1', 'F41.8', 'F41.9', 'F42.9', 'F43.10', 'F43.20',
-    'F43.23', 'F60.3', 'F79', 'F90.9',
-    # Abbreviations (5)
+    'F10.129', 'F10.20', 'F10.21', 'F10.229', 'F10.239', 'F11.10', 'F11.20', 'F11.21',
+    'F11.23', 'F11.90', 'F12.10', 'F12.90', 'F14.10', 'F14.90', 'F17.200', 'F17.210',
+    'F17.290', 'F19.10', 'F20.0', 'F20.9', 'F25.9', 'F29', 'F31.9', 'F32.9',
+    'F33.2', 'F39', 'F41.0', 'F41.1', 'F41.8', 'F41.9', 'F42.9', 'F43.10',
+    'F60.3', 'F90.9',
+    # Abbreviations (fixed)
     'ADHD', 'GAD', 'MDD', 'OCD', 'PTSD',
-    # Conditions (47)
-    'abuse', 'alcohol', 'alcohol abuse', 'alcohol use disorder', 'alcoholic cirrhosis',
-    'alzheimer', 'anorexia', 'anxiety', 'anxious', 'asperger', 'attention deficit',
-    'autism', 'bipolar', 'borderline', 'bulimia', 'cognitive', 'cognitive impairment',
-    'confused', 'confusion', 'delirium', 'dementia', 'depressed', 'depression',
-    'depressive', 'disorder', 'eating disorder', 'generalized anxiety',
-    'hepatic encephalopathy', 'insomnia', 'major', 'major depressive', 'mania',
-    'manic', 'mental', 'nicotine', 'obsessive', 'panic', 'polysubstance abuse',
-    'post-traumatic', 'psychiatric', 'psychosis', 'psychotic', 'schizophrenia',
-    'seizure', 'seizures', 'sleep disorder', 'sleep disturbance', 'smoker', 'smoking',
-    'stress disorder', 'substance', 'substance abuse', 'tobacco', 'tobacco abuse',
-    'tobacco use', 'trauma',
-    # Medications (31)
-    'alprazolam', 'amitriptyline', 'aripiprazole', 'benzodiazepine', 'bupropion',
-    'buspirone', 'carbamazepine', 'citalopram', 'clonazepam', 'dextroamphetamine',
-    'diazepam', 'duloxetine', 'escitalopram', 'fluoxetine', 'lamotrigine', 'lithium',
-    'lorazepam', 'memantine', 'methylphenidate', 'midazolam', 'mirtazapine',
-    'nortriptyline', 'olanzapine', 'paroxetine', 'quetiapine', 'risperidone',
-    'sertraline', 'trazodone', 'valproate', 'venlafaxine', 'zolpidem',
-    # Section headers (12)
-    'diagnoses', 'diagnoses:', 'diagnosis', 'diagnosis:', 'discharge medications:',
-    'home medications:', 'medication', 'medication:', 'medications', 'medications:',
-    'mental status:', 'psychiatric diagnoses:', 'psychiatric history:',
-    'social history', 'social history:', 'substance use:'
+    # Conditions (frequency-ranked ICD-10-CM terms + statistically-enriched additions)
+    'abuse', 'acute delirium', 'adhd', 'adjustment', 'adjustment disorder', 'affective',
+    'affective disorder', 'agitation', 'alcohol', 'alcohol abuse', 'alcohol use disorder', 'alcoholism',
+    "alzheimer's", 'amphetamine', 'anhedonia', 'anorexia', 'antipsychotic', 'anxiety',
+    'anxiety disorder', 'asd', 'attacks', 'attention deficit', 'auditory', 'autism',
+    'behavioral', 'benzo', 'benzodiazepine abuse', 'benzos', 'binge', 'bipolar',
+    'bipolar disorder', 'borderline', 'bulimia', 'cannabis', 'cannabis use disorder', 'catatonia',
+    'cessation', 'cigarettes', 'ciwa', 'cocaine', 'cocaine abuse', 'cocaine use disorder',
+    'cognitive', 'confused', 'confusion', 'conversion', 'conversion disorder', 'counseled',
+    'counseling', 'crack', 'cravings', 'delirium', 'delusion', 'delusional',
+    'delusional disorder', 'dementia', 'dependence', 'depression', 'depressive', 'depressive episode',
+    'developmental', 'disorder', 'disorganized', 'disturbance', 'drug abuse', 'eating',
+    'eating disorder', 'ect', 'fentanyl', 'generalized', 'hopelessness', 'hypoactive',
+    'impairment', 'impulse control', 'induced', 'insomnia', 'intellectual', 'irritability',
+    'ivdu', 'lacosamide', 'major depression', 'major depressive', 'mania', 'manic',
+    'manic episode', 'marijuana', 'mdd', 'memory', 'memory loss', 'mental',
+    'mood', 'neurocognitive', 'neuropathic', 'nicotine dependence', 'nightmares', 'nos',
+    'ocd', 'opiate', 'opioid', 'opioid abuse', 'opioid use disorder', 'opioids',
+    'overdose', 'panic', 'paranoia', 'paranoid', 'personality', 'personality disorder',
+    'polysubstance', 'postpartum depression', 'psychiatric', 'psychosis', 'psychotic', 'ptsd',
+    'quit', 'racing', 'remission', 'restless', 'restlessness', 'schizoaffective',
+    'schizoaffective disorder', 'schizophrenia', 'seizure', 'sexual dysfunction', 'sleep', 'sleep disorder',
+    'smoking', 'sober', 'somatic symptom', 'somatoform', 'spasm', 'spasms',
+    'spectrum', 'ssri', 'stress reaction', 'substance', 'suicidal', 'suicidality',
+    'suicide', 'tics', 'tobacco', 'trauma', 'unspecified', 'unspecified mood disorder',
+    'valproic', 'vascular dementia', 'withdrawal',
+    # Medications (frequency-ranked generic names + enriched brand names)
+    'abilify', 'adderall', 'alprazolam', 'ambien', 'amitriptyline', 'aripiprazole',
+    'ativan', 'baclofen', 'benadryl', 'benzodiazepine', 'buprenorphine', 'bupropion',
+    'buproprion', 'buspirone', 'celexa', 'citalopram', 'clonazepam', 'clonidine',
+    'cymbalta', 'depakote', 'dextroamphetamine', 'diazepam', 'dilantin', 'diphenhydramine',
+    'divalproex', 'donepezil', 'duloxetine', 'effexor', 'escitalopram', 'fluoxetine',
+    'gabapentin', 'haldol', 'haloperidol', 'hydroxyzine', 'keppra', 'klonopin',
+    'lamictal', 'lamotrigine', 'latuda', 'levetiracetam', 'lexapro', 'lithium',
+    'lorazepam', 'lyrica', 'melatonin', 'methadone', 'methylphenidate', 'mirtazapine',
+    'naloxone', 'narcan', 'neurontin', 'nortriptyline', 'olanzapine', 'paroxetine',
+    'prazosin', 'pregabalin', 'propranolol', 'prozac', 'quetiapine', 'ramelteon',
+    'risperdal', 'risperidone', 'ritalin', 'seroquel', 'sertraline', 'suboxone',
+    'topamax', 'topiramate', 'trazodone', 'valium', 'venlafaxine', 'wellbutrin',
+    'xanax', 'zoloft', 'zolpidem', 'zyprexa',
+    # Section headers (relevant, top by frequency)
+    'discharge diagnosis', 'discharge medications', 'family psychiatric history', 'medication changes',
+    'medications', 'medications on admission', 'mental status', 'new medications',
+    'past psychiatric history', 'primary diagnoses', 'primary diagnosis', 'secondary diagnoses',
+    'secondary diagnosis', 'social history', 'substance abuse history', 'substance use history'
 ]
 
 SYSTEM_PROMPT = '''Extract all psychiatric F-codes (F00-F99) from the clinical text.
