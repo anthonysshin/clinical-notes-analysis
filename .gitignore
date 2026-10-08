@@ -166,6 +166,12 @@ manuscript_*.txt
 old_session_prompts.md
 _reviewer_response_drafts/
 
+# Private workstation/session files and manuscript drafts (never commit)
+RESTORE.md
+environment_freeze.txt
+manuscript/
+claude_state/
+
 # Detailed results (numbers may drift ahead of the published manuscript)
 RESULTS.md
 
